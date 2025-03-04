@@ -31,6 +31,20 @@ class ApiEndpoints {
   static const String fetchEmployees = 'fetch_employees.php';
   static const String processLoanRepayment = 'process_loan_repayment.php';
   static const String addLoan = 'add_loan.php';
+  static const String saveSalary =
+      'pay_salaries.php'; // New endpoint for saving salaries
+  static const String getSalaries = 'get_paid_salaries.php';
+
+  // New endpoints for deductions and benefits
+  static const String addDeduction = 'add_deduction.php';
+  static const String fetchDeductionsList =
+      'fetch_deductions_list.php'; // Renamed to avoid conflict with fetchDeductions
+  static const String addBenefit = 'add_benefit.php';
+  static const String fetchBenefits =
+      'fetch_non_cash_benefits.php'; // Updated to use non-cash benefits endpoint
+
+  static const String addInsuranceRelief = 'add_insurance_relief.php';
+  static const String getInsuranceRelief = 'get_insurance_relief.php';
 }
 
 /// Custom Exceptions
@@ -152,7 +166,7 @@ class ApiService {
     }
   }
 
-  /// Fetches non-cash benefits for an employee for a specific month and year.
+  // Fetches non-cash benefits for an employee for a specific month and year.
   Future<List<Map<String, dynamic>>> fetchNonCashBenefits(
       String employeeId, int month, int year) async {
     final data = await _postRequest(ApiEndpoints.fetchNonCashBenefits, {
@@ -166,6 +180,7 @@ class ApiService {
       throw Exception('Failed to fetch non-cash benefits: ${data['message']}');
     }
   }
+  
 
   /// Fetches overtime amount for an employee for a specific month and year.
   Future<double> fetchOvertimeAmount(
@@ -327,22 +342,18 @@ class ApiService {
 
   /// Fetches all employees from the backend.
   Future<List<Map<String, dynamic>>> fetchEmployees() async {
-    final response = await client.get(Uri.parse(ApiEndpoints.fetchEmployees));
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      if (data['status'] == 'success') {
-        return List<Map<String, dynamic>>.from(data['employees']);
-      } else {
-        throw Exception('Failed to fetch employees: ${data['message']}');
-      }
+    final data = await _getRequest(ApiEndpoints.fetchEmployees);
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['employees']);
     } else {
-      throw Exception('Failed to load employees');
+      throw Exception('Failed to fetch employees: ${data['message']}');
     }
   }
 
-  /// processes loan repayment for an employee.
+  /// Processes loan repayment for an employee.
   Future<void> processLoanRepayment(Map<String, dynamic> repaymentData) async {
-    final data = await _postRequest(ApiEndpoints.processLoanRepayment, repaymentData);
+    final data =
+        await _postRequest(ApiEndpoints.processLoanRepayment, repaymentData);
     if (data['status'] != 'success') {
       throw Exception('Failed to process loan repayment: ${data['message']}');
     }
@@ -353,6 +364,112 @@ class ApiService {
     final data = await _postRequest(ApiEndpoints.addLoan, loanData);
     if (data['status'] != 'success') {
       throw Exception('Failed to add loan: ${data['message']}');
+    }
+  }
+
+  /// Saves salary data for an employee or multiple employees.
+  Future<void> saveSalary(Map<String, dynamic> salaryData) async {
+    try {
+      final response = await _postRequest(ApiEndpoints.saveSalary, salaryData);
+
+      if (response['status'] != 'success') {
+        throw Exception('Failed to save salary: ${response['message']}');
+      }
+    } catch (e) {
+      throw Exception('Error saving salary data: $e');
+    }
+  }
+
+  /// Fetches the list of saved salaries.
+  Future<List<Map<String, dynamic>>> getSalaries() async {
+    final data = await _getRequest(ApiEndpoints.getSalaries);
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['salaries']);
+    } else {
+      throw Exception('Failed to fetch salaries: ${data['message']}');
+    }
+  }
+
+  /// Adds a new deduction to the backend.
+  Future<void> addDeduction(Map<String, dynamic> deductionData) async {
+    final data = await _postRequest(ApiEndpoints.addDeduction, deductionData);
+    if (data['status'] != 'success') {
+      throw Exception('Failed to add deduction: ${data['message']}');
+    }
+  }
+
+  /// Fetches the list of deductions from the backend.
+  Future<List<Map<String, dynamic>>> fetchDeductionsList() async {
+    final data = await _getRequest(ApiEndpoints.fetchDeductionsList);
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['deductions']);
+    } else {
+      throw Exception('Failed to fetch deductions: ${data['message']}');
+    }
+  }
+
+  /// Adds a new benefit to the backend.
+  Future<void> addBenefit(Map<String, dynamic> benefitData) async {
+    final data = await _postRequest(ApiEndpoints.addBenefit, benefitData);
+    if (data['status'] != 'success') {
+      throw Exception('Failed to add benefit: ${data['message']}');
+    }
+  }
+
+  /// Fetches non-cash benefits for a specific employee, month, and year from the backend.
+  Future<List<Map<String, dynamic>>> fetchBenefits(
+      String employeeId, int month, int year) async {
+    final data = await _postRequest(ApiEndpoints.fetchBenefits, {
+      'employee_id': employeeId,
+      'month': month,
+      'year': year,
+    });
+    if (data['status'] == 'success') {
+      // Filter to return only non-cash benefits
+      final allBenefits = List<Map<String, dynamic>>.from(data['benefits']);
+      return allBenefits
+          .where((benefit) => benefit['benefit_type'] == 'Non-Cash')
+          .toList();
+    } else {
+      throw Exception('Failed to fetch benefits: ${data['message']}');
+    }
+  }
+
+   /// Adds a new insurance relief record to the backend
+  Future<void> addInsuranceRelief(Map<String, dynamic> reliefData) async {
+    final data =
+        await _postRequest(ApiEndpoints.addInsuranceRelief, reliefData);
+    if (data['status'] != 'success') {
+      throw Exception('Failed to add insurance relief: ${data['message']}');
+    }
+  }
+
+   /// Fetches insurance relief records from the backend
+  /// Can filter by employeeId, month, and year if provided
+  Future<List<Map<String, dynamic>>> getInsuranceRelief({
+    String? employeeId,
+    int? month,
+    int? year,
+  }) async {
+    // Build query parameters
+    Map<String, dynamic> queryParams = {};
+    if (employeeId != null) queryParams['employee_id'] = employeeId;
+    if (month != null) queryParams['month'] = month;
+    if (year != null) queryParams['year'] = year;
+
+    final data;
+    if (queryParams.isEmpty) {
+      // Simple GET request if no parameters
+      data = await _getRequest(ApiEndpoints.getInsuranceRelief);
+    } else {
+      // POST request with parameters
+      data = await _postRequest(ApiEndpoints.getInsuranceRelief, queryParams);
+    }
+
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['relief_records']);
+    } else {
+      throw Exception('Failed to fetch insurance relief: ${data['message']}');
     }
   }
 }

@@ -4,31 +4,28 @@ import 'package:intl/intl.dart';
 
 import '../services.dart';
 
-class BenefitsScreen extends StatefulWidget {
-  const BenefitsScreen({super.key});
+class InsuranceReliefScreen extends StatefulWidget {
+  const InsuranceReliefScreen({super.key});
 
   @override
-  State<BenefitsScreen> createState() => _BenefitsScreenState();
+  _InsuranceReliefScreenState createState() => _InsuranceReliefScreenState();
 }
 
-class _BenefitsScreenState extends State<BenefitsScreen> {
+class _InsuranceReliefScreenState extends State<InsuranceReliefScreen> {
+  final ApiService _apiService = ApiService(client: http.Client());
   final _formKey = GlobalKey<FormState>();
-  final _descriptionController = TextEditingController();
-  final _amountController = TextEditingController();
+  final _premiumController = TextEditingController();
+  final _percentageController = TextEditingController();
+  final _reliefController = TextEditingController();
+
+  String? _selectedCompany;
   String? _selectedEmployeeId;
-  String? _selectedCompany; // New variable for selected company
-  String? _selectedBenefitType;
-  DateTime? _selectedDate;
-  late ApiService _apiService;
+  List<String> _companyNames = ['All Companies'];
   List<Map<String, dynamic>> _employees = [];
-  List<Map<String, dynamic>> _benefits = [];
-  List<String> _companyNames = [
-    'All Companies'
-  ]; // List of unique company names
+  List<Map<String, dynamic>> _reliefRecords = [];
   bool _isLoadingEmployees = true;
-  bool _isLoadingBenefits = true;
+  bool _isLoadingReliefs = true;
   String? _errorMessage;
-  final List<String> _benefitTypes = ['Cash', 'Non-Cash'];
 
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
@@ -36,133 +33,110 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
   @override
   void initState() {
     super.initState();
-    _apiService = ApiService(client: http.Client());
-    _fetchEmployees();
-    _fetchBenefits();
+    _fetchInitialData();
+    _premiumController.addListener(_calculateRelief);
+    _percentageController.addListener(_calculateRelief);
   }
 
-  Future<void> _fetchEmployees() async {
+  Future<void> _fetchInitialData() async {
     try {
-      final employees = await _apiService.fetchEmployees();
+      final employees = await _apiService.getAllEmployees();
       setState(() {
         _employees = employees;
         _companyNames = ['All Companies'] +
             employees
                 .map((e) => e['company_name'] as String?)
                 .where((name) => name != null && name.isNotEmpty)
-                .cast<String>()
                 .toSet()
+                .cast<String>()
                 .toList();
         _isLoadingEmployees = false;
       });
+      await _fetchReliefRecords();
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load employees: $e';
         _isLoadingEmployees = false;
+        _isLoadingReliefs = false;
+        _errorMessage = 'Failed to load data: $e';
       });
     }
   }
 
-  Future<void> _fetchBenefits() async {
-    setState(() => _isLoadingBenefits = true);
-
+  Future<void> _fetchReliefRecords() async {
+    setState(() => _isLoadingReliefs = true);
     try {
-      final allBenefits = <Map<String, dynamic>>[];
-      for (var employee in _employees) {
-        final employeeId = employee['employee_id'].toString();
-        final benefits = await _apiService.fetchBenefits(
-            employeeId, _selectedMonth, _selectedYear);
-        allBenefits.addAll(benefits);
-      }
+      final reliefRecords = await _apiService.getInsuranceRelief(
+        month: _selectedMonth,
+        year: _selectedYear,
+      );
       setState(() {
-        _benefits = allBenefits;
-        _isLoadingBenefits = false;
+        _reliefRecords = reliefRecords;
+        _isLoadingReliefs = false;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load benefits: $e';
-        _isLoadingBenefits = false;
+        _errorMessage = 'Failed to load relief records: $e';
+        _isLoadingReliefs = false;
       });
     }
   }
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.light().copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Colors.teal,
-              onPrimary: Colors.white,
-              onSurface: Colors.black,
-            ),
-            dialogBackgroundColor: Colors.white,
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
-    }
+  void _calculateRelief() {
+    final premium = double.tryParse(_premiumController.text) ?? 0.0;
+    final percentage = double.tryParse(_percentageController.text) ?? 0.0;
+    final relief = premium * (percentage / 100);
+    _reliefController.text = relief.toStringAsFixed(2);
   }
 
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       final employeeId = _selectedEmployeeId!;
-      final benefitType = _selectedBenefitType!;
-      final description = _descriptionController.text;
-      final amount = double.tryParse(_amountController.text) ?? 0.0;
-      final date = _selectedDate ?? DateTime.now();
+      final premium = double.parse(_premiumController.text);
+      final percentage = double.parse(_percentageController.text);
+      final relief = double.parse(_reliefController.text);
 
-      final benefitData = {
+      final reliefData = {
         'employee_id': employeeId,
-        'benefit_type': benefitType,
-        'description': description,
-        'amount': amount,
-        'date': DateFormat('yyyy-MM-dd').format(date),
+        'premium_amount': premium,
+        'relief_percentage': percentage,
+        'relief_amount': relief,
+        'date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
       };
 
       try {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Adding benefit...')),
+          const SnackBar(content: Text('Saving insurance relief...')),
         );
 
-        await _apiService.addBenefit(benefitData);
+        await _apiService.addInsuranceRelief(reliefData);
 
-        final benefitDate = DateTime.parse(benefitData['date'] as String);
+        final reliefDate = DateTime.parse(reliefData['date'] as String);
         setState(() {
-          _selectedMonth = benefitDate.month;
-          _selectedYear = benefitDate.year;
+          _selectedMonth = reliefDate.month;
+          _selectedYear = reliefDate.year;
         });
-        await _fetchBenefits();
+        await _fetchReliefRecords();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Benefit Added: ${_employees.firstWhere((emp) => emp['employee_id'].toString() == employeeId)['fullname']}, $benefitType, $description, KSh $amount, ${DateFormat.yMMMd().format(date)}',
+              'Insurance Relief Saved: ${_employees.firstWhere((emp) => emp['employee_id'].toString() == employeeId)['fullname']}, Premium: KSh $premium, Relief: KSh $relief',
             ),
             backgroundColor: Colors.teal,
           ),
         );
 
-        _descriptionController.clear();
-        _amountController.clear();
+        _premiumController.clear();
+        _percentageController.clear();
+        _reliefController.clear();
         setState(() {
+          _selectedCompany = null;
           _selectedEmployeeId = null;
-          _selectedBenefitType = null;
-          _selectedDate = null;
         });
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to add benefit: $e'),
+            content: Text('Failed to save relief: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -172,8 +146,11 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
 
   @override
   void dispose() {
-    _descriptionController.dispose();
-    _amountController.dispose();
+    _premiumController.removeListener(_calculateRelief);
+    _percentageController.removeListener(_calculateRelief);
+    _premiumController.dispose();
+    _percentageController.dispose();
+    _reliefController.dispose();
     super.dispose();
   }
 
@@ -181,17 +158,16 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Benefits'),
+        title: const Text('Insurance Relief'),
         backgroundColor: Colors.teal,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: _isLoadingEmployees || _isLoadingBenefits
+        child: _isLoadingEmployees || _isLoadingReliefs
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
                 ? Center(child: Text(_errorMessage!))
                 : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -208,6 +184,7 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _selectedMonth = value!;
+                                _fetchReliefRecords();
                               });
                             },
                           ),
@@ -223,18 +200,19 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _selectedYear = value!;
+                                _fetchReliefRecords();
                               });
                             },
                           ),
                           ElevatedButton(
-                            onPressed: _fetchBenefits,
+                            onPressed: _fetchReliefRecords,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.teal,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16.0),
                             ),
                             child: const Text(
-                              'Fetch Benefits',
+                              'Fetch Reliefs',
                               style: TextStyle(fontSize: 14),
                             ),
                           ),
@@ -242,13 +220,13 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                       ),
                       const SizedBox(height: 16.0),
                       Expanded(
+                        flex: 1,
                         child: Form(
                           key: _formKey,
                           child: SingleChildScrollView(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Company Dropdown
                                 DropdownButtonFormField<String>(
                                   value: _selectedCompany,
                                   decoration: const InputDecoration(
@@ -264,20 +242,16 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                   onChanged: (value) {
                                     setState(() {
                                       _selectedCompany = value;
-                                      _selectedEmployeeId =
-                                          null; // Reset employee selection
+                                      _selectedEmployeeId = null;
                                     });
                                   },
                                   validator: (value) {
-                                    if (value == null) {
+                                    if (value == null)
                                       return 'Please select a company';
-                                    }
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 16.0),
-
-                                // Employee Dropdown (filtered by company)
                                 DropdownButtonFormField<String>(
                                   value: _selectedEmployeeId,
                                   decoration: const InputDecoration(
@@ -303,71 +277,24 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                     });
                                   },
                                   validator: (value) {
-                                    if (value == null) {
+                                    if (value == null)
                                       return 'Please select an employee';
-                                    }
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 16.0),
-
-                                // Benefit Type Dropdown
-                                DropdownButtonFormField<String>(
-                                  value: _selectedBenefitType,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Benefit Type',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: _benefitTypes.map((type) {
-                                    return DropdownMenuItem(
-                                      value: type,
-                                      child: Text(type),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedBenefitType = value;
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null) {
-                                      return 'Please select a benefit type';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16.0),
-
-                                // Description Field
                                 TextFormField(
-                                  controller: _descriptionController,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Description',
-                                    border: OutlineInputBorder(),
-                                    hintText: 'e.g., Company Car, Lunch, etc.',
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter a description';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16.0),
-
-                                // Amount Field
-                                TextFormField(
-                                  controller: _amountController,
+                                  controller: _premiumController,
                                   keyboardType: TextInputType.number,
                                   decoration: const InputDecoration(
-                                    labelText: 'Amount (KSh)',
+                                    labelText: 'Premium Amount (KSh)',
                                     border: OutlineInputBorder(),
                                     hintText: 'e.g., 10000.00',
                                     prefixText: 'KSh ',
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Please enter an amount';
+                                      return 'Please enter a premium amount';
                                     }
                                     if (double.tryParse(value) == null ||
                                         double.parse(value) <= 0) {
@@ -377,35 +304,39 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                   },
                                 ),
                                 const SizedBox(height: 16.0),
-
-                                // Date Picker
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      _selectedDate == null
-                                          ? 'No date selected'
-                                          : 'Date: ${DateFormat.yMMMd().format(_selectedDate!)}',
-                                      style: TextStyle(
-                                        color: _selectedDate == null
-                                            ? Colors.grey
-                                            : Colors.black,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () => _selectDate(context),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.teal,
-                                      ),
-                                      child: const Text('Select Date'),
-                                    ),
-                                  ],
+                                TextFormField(
+                                  controller: _percentageController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Relief Percentage (%)',
+                                    border: OutlineInputBorder(),
+                                    hintText: 'e.g., 15',
+                                    suffixText: '%',
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter a percentage';
+                                    }
+                                    final percent = double.tryParse(value);
+                                    if (percent == null ||
+                                        percent < 0 ||
+                                        percent > 100) {
+                                      return 'Please enter a valid percentage (0-100)';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16.0),
+                                TextFormField(
+                                  controller: _reliefController,
+                                  readOnly: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Calculated Relief (KSh)',
+                                    border: OutlineInputBorder(),
+                                    prefixText: 'KSh ',
+                                  ),
                                 ),
                                 const SizedBox(height: 24.0),
-
-                                // Submit Button
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton(
@@ -416,7 +347,7 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                           vertical: 16.0),
                                     ),
                                     child: const Text(
-                                      'Add Benefit',
+                                      'Save Relief',
                                       style: TextStyle(fontSize: 16),
                                     ),
                                   ),
@@ -426,44 +357,51 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20.0),
                       Expanded(
-                        child: _benefits.isEmpty
-                            ? const Center(
-                                child: Text('No benefits recorded yet'))
-                            : SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  columns: const [
-                                    DataColumn(label: Text('Employee')),
-                                    DataColumn(label: Text('Type')),
-                                    DataColumn(label: Text('Description')),
-                                    DataColumn(label: Text('Amount (KSh)')),
-                                    DataColumn(label: Text('Date')),
-                                  ],
-                                  rows: _benefits.map((benefit) {
-                                    final employee = _employees.firstWhere(
-                                        (emp) =>
-                                            emp['employee_id'].toString() ==
-                                            benefit['employee_id'].toString(),
-                                        orElse: () =>
-                                            {'fullname': 'Unknown Employee'});
-                                    return DataRow(cells: [
-                                      DataCell(Text(
-                                          employee['fullname'] ?? 'Unknown')),
-                                      DataCell(Text(benefit['benefit_type'] ??
-                                          'Unknown')),
-                                      DataCell(Text(
-                                          benefit['description'] ?? 'Unknown')),
-                                      DataCell(Text(
-                                          'KSh ${benefit['amount'].toString()}')),
-                                      DataCell(Text(DateFormat.yMMMd().format(
-                                          DateTime.parse(
-                                              benefit['date'] ?? '')))),
-                                    ]);
-                                  }).toList(),
-                                ),
+                        flex: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 16.0),
+                            const Text(
+                              'Insurance Relief Records',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
+                            ),
+                            const SizedBox(height: 8.0),
+                            Expanded(
+                              child: _reliefRecords.isEmpty
+                                  ? const Center(
+                                      child: Text('No relief records found'))
+                                  : ListView.builder(
+                                      itemCount: _reliefRecords.length,
+                                      itemBuilder: (context, index) {
+                                        final record = _reliefRecords[index];
+                                        final employee = _employees.firstWhere(
+                                          (emp) =>
+                                              emp['employee_id'].toString() ==
+                                              record['employee_id'],
+                                          orElse: () => {'fullname': 'Unknown'},
+                                        );
+                                        return Card(
+                                          margin: const EdgeInsets.symmetric(
+                                              vertical: 4.0),
+                                          child: ListTile(
+                                            title: Text(employee['fullname']),
+                                            subtitle: Text(
+                                              'Premium: KSh ${record['premium_amount'] ?? 'N/A'} | Relief: KSh ${record['relief_amount'] ?? 'N/A'} | ${record['date'] ?? 'N/A'}',
+                                            ),
+                                            trailing: Text(
+                                                '${record['relief_percentage'] ?? 'N/A'}%'),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

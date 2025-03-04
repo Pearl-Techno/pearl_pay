@@ -4,41 +4,36 @@ import 'package:intl/intl.dart';
 
 import '../services.dart';
 
-class BenefitsScreen extends StatefulWidget {
-  const BenefitsScreen({super.key});
+class DeductionsScreen extends StatefulWidget {
+  const DeductionsScreen({super.key});
 
   @override
-  State<BenefitsScreen> createState() => _BenefitsScreenState();
+  State<DeductionsScreen> createState() => _DeductionsScreenState();
 }
 
-class _BenefitsScreenState extends State<BenefitsScreen> {
+class _DeductionsScreenState extends State<DeductionsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
   final _amountController = TextEditingController();
   String? _selectedEmployeeId;
   String? _selectedCompany; // New variable for selected company
-  String? _selectedBenefitType;
   DateTime? _selectedDate;
   late ApiService _apiService;
   List<Map<String, dynamic>> _employees = [];
-  List<Map<String, dynamic>> _benefits = [];
+  List<Map<String, dynamic>> _deductions = [];
   List<String> _companyNames = [
     'All Companies'
   ]; // List of unique company names
   bool _isLoadingEmployees = true;
-  bool _isLoadingBenefits = true;
+  bool _isLoadingDeductions = true;
   String? _errorMessage;
-  final List<String> _benefitTypes = ['Cash', 'Non-Cash'];
-
-  int _selectedMonth = DateTime.now().month;
-  int _selectedYear = DateTime.now().year;
 
   @override
   void initState() {
     super.initState();
     _apiService = ApiService(client: http.Client());
     _fetchEmployees();
-    _fetchBenefits();
+    _fetchDeductions();
   }
 
   Future<void> _fetchEmployees() async {
@@ -46,6 +41,7 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
       final employees = await _apiService.fetchEmployees();
       setState(() {
         _employees = employees;
+        // Extract unique company names
         _companyNames = ['All Companies'] +
             employees
                 .map((e) => e['company_name'] as String?)
@@ -63,25 +59,17 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
     }
   }
 
-  Future<void> _fetchBenefits() async {
-    setState(() => _isLoadingBenefits = true);
-
+  Future<void> _fetchDeductions() async {
     try {
-      final allBenefits = <Map<String, dynamic>>[];
-      for (var employee in _employees) {
-        final employeeId = employee['employee_id'].toString();
-        final benefits = await _apiService.fetchBenefits(
-            employeeId, _selectedMonth, _selectedYear);
-        allBenefits.addAll(benefits);
-      }
+      final deductions = await _apiService.fetchDeductionsList();
       setState(() {
-        _benefits = allBenefits;
-        _isLoadingBenefits = false;
+        _deductions = deductions;
+        _isLoadingDeductions = false;
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to load benefits: $e';
-        _isLoadingBenefits = false;
+        _errorMessage = 'Failed to load deductions: $e';
+        _isLoadingDeductions = false;
       });
     }
   }
@@ -116,14 +104,12 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       final employeeId = _selectedEmployeeId!;
-      final benefitType = _selectedBenefitType!;
       final description = _descriptionController.text;
       final amount = double.tryParse(_amountController.text) ?? 0.0;
       final date = _selectedDate ?? DateTime.now();
 
-      final benefitData = {
+      final deductionData = {
         'employee_id': employeeId,
-        'benefit_type': benefitType,
         'description': description,
         'amount': amount,
         'date': DateFormat('yyyy-MM-dd').format(date),
@@ -131,22 +117,17 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
 
       try {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Adding benefit...')),
+          const SnackBar(content: Text('Adding deduction...')),
         );
 
-        await _apiService.addBenefit(benefitData);
+        await _apiService.addDeduction(deductionData);
 
-        final benefitDate = DateTime.parse(benefitData['date'] as String);
-        setState(() {
-          _selectedMonth = benefitDate.month;
-          _selectedYear = benefitDate.year;
-        });
-        await _fetchBenefits();
+        await _fetchDeductions();
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Benefit Added: ${_employees.firstWhere((emp) => emp['employee_id'].toString() == employeeId)['fullname']}, $benefitType, $description, KSh $amount, ${DateFormat.yMMMd().format(date)}',
+              'Deduction Added: ${_employees.firstWhere((emp) => emp['employee_id'].toString() == employeeId)['fullname']}, $description, KSh $amount, ${DateFormat.yMMMd().format(date)}',
             ),
             backgroundColor: Colors.teal,
           ),
@@ -156,13 +137,12 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
         _amountController.clear();
         setState(() {
           _selectedEmployeeId = null;
-          _selectedBenefitType = null;
           _selectedDate = null;
         });
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to add benefit: $e'),
+            content: Text('Failed to add deduction: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -181,66 +161,18 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Benefits'),
+        title: const Text('Deductions'),
         backgroundColor: Colors.teal,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: _isLoadingEmployees || _isLoadingBenefits
+        child: _isLoadingEmployees || _isLoadingDeductions
             ? const Center(child: CircularProgressIndicator())
             : _errorMessage != null
                 ? Center(child: Text(_errorMessage!))
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          DropdownButton<int>(
-                            value: _selectedMonth,
-                            items: List.generate(12, (index) => index + 1)
-                                .map((month) => DropdownMenuItem(
-                                      value: month,
-                                      child: Text(DateFormat('MMMM').format(
-                                          DateTime(_selectedYear, month))),
-                                    ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedMonth = value!;
-                              });
-                            },
-                          ),
-                          DropdownButton<int>(
-                            value: _selectedYear,
-                            items: List.generate(10,
-                                    (index) => DateTime.now().year - index + 1)
-                                .map((year) => DropdownMenuItem(
-                                      value: year,
-                                      child: Text(year.toString()),
-                                    ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedYear = value!;
-                              });
-                            },
-                          ),
-                          ElevatedButton(
-                            onPressed: _fetchBenefits,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16.0),
-                            ),
-                            child: const Text(
-                              'Fetch Benefits',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16.0),
                       Expanded(
                         child: Form(
                           key: _formKey,
@@ -311,40 +243,14 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                 ),
                                 const SizedBox(height: 16.0),
 
-                                // Benefit Type Dropdown
-                                DropdownButtonFormField<String>(
-                                  value: _selectedBenefitType,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Benefit Type',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: _benefitTypes.map((type) {
-                                    return DropdownMenuItem(
-                                      value: type,
-                                      child: Text(type),
-                                    );
-                                  }).toList(),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      _selectedBenefitType = value;
-                                    });
-                                  },
-                                  validator: (value) {
-                                    if (value == null) {
-                                      return 'Please select a benefit type';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16.0),
-
                                 // Description Field
                                 TextFormField(
                                   controller: _descriptionController,
                                   decoration: const InputDecoration(
                                     labelText: 'Description',
                                     border: OutlineInputBorder(),
-                                    hintText: 'e.g., Company Car, Lunch, etc.',
+                                    hintText:
+                                        'e.g., Advance Deduction, Loan Repayment, etc.',
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
@@ -355,14 +261,14 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                 ),
                                 const SizedBox(height: 16.0),
 
-                                // Amount Field
+                                // Amount Field (in Kenyan Shillings)
                                 TextFormField(
                                   controller: _amountController,
                                   keyboardType: TextInputType.number,
                                   decoration: const InputDecoration(
                                     labelText: 'Amount (KSh)',
                                     border: OutlineInputBorder(),
-                                    hintText: 'e.g., 10000.00',
+                                    hintText: 'e.g., 5000.00',
                                     prefixText: 'KSh ',
                                   ),
                                   validator: (value) {
@@ -416,7 +322,7 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                                           vertical: 16.0),
                                     ),
                                     child: const Text(
-                                      'Add Benefit',
+                                      'Add Deduction',
                                       style: TextStyle(fontSize: 16),
                                     ),
                                   ),
@@ -427,39 +333,37 @@ class _BenefitsScreenState extends State<BenefitsScreen> {
                         ),
                       ),
                       const SizedBox(height: 20.0),
+                      // Deductions Table
                       Expanded(
-                        child: _benefits.isEmpty
+                        child: _deductions.isEmpty
                             ? const Center(
-                                child: Text('No benefits recorded yet'))
+                                child: Text('No deductions recorded yet'))
                             : SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
                                 child: DataTable(
                                   columns: const [
                                     DataColumn(label: Text('Employee')),
-                                    DataColumn(label: Text('Type')),
                                     DataColumn(label: Text('Description')),
                                     DataColumn(label: Text('Amount (KSh)')),
                                     DataColumn(label: Text('Date')),
                                   ],
-                                  rows: _benefits.map((benefit) {
+                                  rows: _deductions.map((deduction) {
                                     final employee = _employees.firstWhere(
                                         (emp) =>
                                             emp['employee_id'].toString() ==
-                                            benefit['employee_id'].toString(),
+                                            deduction['employee_id'].toString(),
                                         orElse: () =>
                                             {'fullname': 'Unknown Employee'});
                                     return DataRow(cells: [
                                       DataCell(Text(
                                           employee['fullname'] ?? 'Unknown')),
-                                      DataCell(Text(benefit['benefit_type'] ??
+                                      DataCell(Text(deduction['description'] ??
                                           'Unknown')),
                                       DataCell(Text(
-                                          benefit['description'] ?? 'Unknown')),
-                                      DataCell(Text(
-                                          'KSh ${benefit['amount'].toString()}')),
+                                          'KSh ${deduction['amount'].toString()}')),
                                       DataCell(Text(DateFormat.yMMMd().format(
                                           DateTime.parse(
-                                              benefit['date'] ?? '')))),
+                                              deduction['date'] ?? '')))),
                                     ]);
                                   }).toList(),
                                 ),

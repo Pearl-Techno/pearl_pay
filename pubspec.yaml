@@ -11,6 +11,13 @@ dependencies:
     sdk: flutter
   http: ^1.2.2  
   intl: ^0.17.0
+  file_picker: ^9.0.1
+  excel: ^4.0.6
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  csv: ^6.0.0
+  path_provider: ^2.1.5
+  universal_html: ^2.2.4
 
 dev_dependencies:
   flutter_test:

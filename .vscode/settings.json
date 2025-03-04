@@ -1,3 +1,8 @@
 {
-    "cmake.sourceDirectory": "C:/flutter projects/pearl_pay/windows"
+    "cmake.sourceDirectory": "C:/flutter projects/pearl_pay/windows",
+    "editor.quickSuggestions": {
+    "other": true,
+    "comments": true,
+    "strings": true
+}
 }

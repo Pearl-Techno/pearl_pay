@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../payment_menu_screens/allowances_screen.dart';
 import '../payment_menu_screens/benefits_screen.dart';
 import '../payment_menu_screens/bonus_screen.dart';
+import '../payment_menu_screens/deductions_screen.dart';
 import '../payment_menu_screens/education_screen.dart';
+import '../payment_menu_screens/insurance_relief_screen.dart'; // New import
+import '../payment_menu_screens/insurance_screen.dart'; // New import
 import '../payment_menu_screens/loans_screen.dart';
 import '../payment_menu_screens/medical_screen.dart';
 import '../payment_menu_screens/overtime_screen.dart';
@@ -18,7 +21,7 @@ class PaymentsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Payments'),
+        title: const Text('Payments'),
         backgroundColor: Colors.teal,
       ),
       body: Padding(
@@ -158,6 +161,46 @@ class PaymentsScreen extends StatelessWidget {
                       );
                     },
                   ),
+                  _buildMenuCard(
+                    context,
+                    icon: Icons.remove_circle_outline,
+                    title: 'Deductions',
+                    subtitle: 'Manage deductions',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => DeductionsScreen()),
+                      );
+                    },
+                  ),
+                  _buildMenuCard(
+                    context,
+                    icon: Icons.security,
+                    title: 'Add Insurance',
+                    subtitle: 'Manage insurance payments',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const InsuranceScreen()),
+                      );
+                    },
+                  ),
+                  _buildMenuCard(
+                    context,
+                    icon: Icons.savings,
+                    title: 'Insurance Relief',
+                    subtitle: 'Manage insurance relief',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                                const InsuranceReliefScreen()),
+                      );
+                    },
+                  ),
                 ],
               ),
             ],
@@ -181,24 +224,24 @@ class PaymentsScreen extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          width: 150, // Fixed width for all cards
-          height: 150, // Fixed height for all cards
+          width: 150,
+          height: 150,
           padding: const EdgeInsets.all(8.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, color: Colors.teal, size: 40),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                   color: Colors.teal,
                 ),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
