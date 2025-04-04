@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/custom_app_bar.dart';
+
 class MedicalScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Medical Screen'),
+      appBar: CustomAppBar(
+        title: 'Medical Payment',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          // Add your notification handling logic here
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          // Add your profile handling logic here
+          print('Profile tapped');
+        },
       ),
       body: Center(
         child: Text('Welcome to the Medical Screen!'),

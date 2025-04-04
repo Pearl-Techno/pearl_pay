@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-import '../services.dart';
+import '../services/services.dart';
+import '../widgets/custom_app_bar.dart';
 
 class RepayLoanScreen extends StatefulWidget {
   final String employeeId;
@@ -116,9 +117,17 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Repay Loan'),
-        backgroundColor: Colors.teal,
+      appBar: CustomAppBar(
+        title: 'Repay Loan',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          // Add your notification handling logic here
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          // Add your profile handling logic here
+          print('Profile tapped');
+        },
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

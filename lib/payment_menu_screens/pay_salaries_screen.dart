@@ -10,7 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:universal_html/html.dart' as html
     if (kIsWeb) "universal_html.dart";
 
-import '../services.dart';
+import '../services/services.dart';
+import '../widgets/custom_app_bar.dart';
 
 class PaySalariesScreen extends StatefulWidget {
   const PaySalariesScreen({super.key});
@@ -151,7 +152,6 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
 
         double insuranceRelief = 0.0;
         if (insuranceReliefs != null && insuranceReliefs.isNotEmpty) {
-          // Only apply insurance relief if this employee's ID matches the relief record
           insuranceRelief = insuranceReliefs
               .where((relief) => relief['employee_id'] == employeeId)
               .fold<double>(
@@ -178,7 +178,6 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
           housingLevy: housingLevy,
         );
 
-        // Apply insurance relief only if it exists for this employee
         final payeDeduction =
             insuranceRelief > 0 && payeDeductionBeforeRelief > 0
                 ? (payeDeductionBeforeRelief - insuranceRelief > 0
@@ -205,7 +204,6 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
             (loanRepayment ?? 0.0) +
             housingLevy;
 
-        // Add insurance relief to net pay only if it exists for this employee
         final netPay = originalGrossPay +
             totalEarningsForEmployee -
             totalCoreDeductions -
@@ -294,7 +292,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
           'paye_deduction': totalPayeDeduction > 0 ? totalPayeDeduction : null,
           'loan_repayment': totalLoanRepayment > 0 ? totalLoanRepayment : null,
           'deductions': totalOtherDeductions > 0 ? totalOtherDeductions : null,
-          'insurance_relief': null, // No total for insurance relief
+          'insurance_relief': null,
           'total_deductions': totalDeductions > 0 ? totalDeductions : null,
           'net_pay': totalNetPay > 0 ? totalNetPay : null,
           'month': selectedMonth,
@@ -329,19 +327,18 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
     setState(() => isLoading = true);
 
     try {
+      // Extract clean header text from _buildTableColumns
       final headers = _buildTableColumns()
-          .map((col) => col.label
-              .toString()
-              .replaceFirst('Text(', '')
-              .replaceFirst(')', ''))
+          .map((col) => (col.label as Text).data!) // Extract the text data
           .toList()
-          .where((header) => header != 'Select')
+          .where((header) => header != 'Select') // Exclude the "Select" column
           .toList();
 
       final List<List<String>> csvData = [headers];
 
       for (var salary in salaries) {
         final row = [
+          salary['employee_id']?.toString() ?? '', // Add employee_id
           salary['company_name']?.toString() ?? '',
           salary['fullname']?.toString() ?? '',
           salary['gross_pay']?.toStringAsFixed(2) ?? '0.00',
@@ -392,9 +389,9 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Master Payroll exported successfully'),
-          backgroundColor: Colors.teal,
+        SnackBar(
+          content: const Text('Master Payroll exported successfully'),
+          backgroundColor: Colors.teal[700],
         ),
       );
     } catch (e) {
@@ -413,72 +410,105 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Salary Slip for ${salary['fullname']}'),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Text('Salary Slip for ${salary['fullname']}',
+            style: TextStyle(color: Colors.teal[900])),
         content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (salary['company_name'] != null)
-                Text('Company: ${salary['company_name']}'),
-              if (salary['gross_pay'] != null)
-                Text('Gross Pay: ${salary['gross_pay'].toStringAsFixed(2)}'),
-              if (salary['house_allowance'] != null)
-                Text(
-                    'House Allowance: ${salary['house_allowance'].toStringAsFixed(2)}'),
-              if (salary['basic_pay'] != null)
-                Text('Basic Pay: ${salary['basic_pay'].toStringAsFixed(2)}'),
-              if (salary['non_cash_benefits'] != null)
-                Text(
-                    'Non-Cash Benefits: ${salary['non_cash_benefits'].toStringAsFixed(2)}'),
-              if (salary['overtime_amount'] != null)
-                Text(
-                    'Overtime Amount: ${salary['overtime_amount'].toStringAsFixed(2)}'),
-              if (salary['earnings'] != null)
-                Text(
-                    'Total Earnings: ${salary['earnings'].toStringAsFixed(2)}'),
-              if (salary['taxable_income'] != null)
-                Text(
-                    'Taxable Income: ${salary['taxable_income'].toStringAsFixed(2)}'),
-              if (salary['shif_deduction'] != null)
-                Text(
-                    'SHIF Deduction: ${salary['shif_deduction'].toStringAsFixed(2)}'),
-              if (salary['nssf_tier_i_deduction'] != null)
-                Text(
-                    'NSSF Tier I Deduction: ${salary['nssf_tier_i_deduction'].toStringAsFixed(2)}'),
-              if (salary['nssf_tier_ii_deduction'] != null)
-                Text(
-                    'NSSF Tier II Deduction: ${salary['nssf_tier_ii_deduction'].toStringAsFixed(2)}'),
-              if (salary['housing_levy'] != null)
-                Text(
-                    'Housing Levy: ${salary['housing_levy'].toStringAsFixed(2)}'),
-              if (salary['paye_deduction'] != null)
-                Text(
-                    'PAYE Deduction: ${salary['paye_deduction'].toStringAsFixed(2)}'),
-              if (salary['loan_repayment'] != null)
-                Text(
-                    'Loan Repayment: ${salary['loan_repayment'].toStringAsFixed(2)}'),
-              if (salary['pension_contributions'] != null)
-                Text(
-                    'Pension Contributions: ${salary['pension_contributions'].toStringAsFixed(2)}'),
-              if (salary['insurance_relief'] != null)
-                Text(
-                    'Insurance Relief: ${salary['insurance_relief'].toStringAsFixed(2)}'),
-              if (salary['deductions'] != null)
-                Text(
-                    'Other Deductions: ${salary['deductions'].toStringAsFixed(2)}'),
-              if (salary['total_deductions'] != null)
-                Text(
-                    'Total Deductions: ${salary['total_deductions'].toStringAsFixed(2)}'),
-              if (salary['net_pay'] != null)
-                Text('Net Pay: ${salary['net_pay'].toStringAsFixed(2)}'),
-            ],
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.white, Colors.teal[50]!],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (salary['employee_id'] != null)
+                  _buildSlipText(
+                      'Employee ID', salary['employee_id'].toString()),
+                if (salary['company_name'] != null)
+                  _buildSlipText('Company', salary['company_name']),
+                if (salary['gross_pay'] != null)
+                  _buildSlipText(
+                      'Gross Pay', salary['gross_pay'].toStringAsFixed(2)),
+                if (salary['house_allowance'] != null)
+                  _buildSlipText('House Allowance',
+                      salary['house_allowance'].toStringAsFixed(2)),
+                if (salary['basic_pay'] != null)
+                  _buildSlipText(
+                      'Basic Pay', salary['basic_pay'].toStringAsFixed(2)),
+                if (salary['non_cash_benefits'] != null)
+                  _buildSlipText('Non-Cash Benefits',
+                      salary['non_cash_benefits'].toStringAsFixed(2)),
+                if (salary['overtime_amount'] != null)
+                  _buildSlipText('Overtime Amount',
+                      salary['overtime_amount'].toStringAsFixed(2)),
+                if (salary['earnings'] != null)
+                  _buildSlipText(
+                      'Total Earnings', salary['earnings'].toStringAsFixed(2)),
+                if (salary['taxable_income'] != null)
+                  _buildSlipText('Taxable Income',
+                      salary['taxable_income'].toStringAsFixed(2)),
+                if (salary['shif_deduction'] != null)
+                  _buildSlipText('SHIF Deduction',
+                      salary['shif_deduction'].toStringAsFixed(2)),
+                if (salary['nssf_tier_i_deduction'] != null)
+                  _buildSlipText('NSSF Tier I Deduction',
+                      salary['nssf_tier_i_deduction'].toStringAsFixed(2)),
+                if (salary['nssf_tier_ii_deduction'] != null)
+                  _buildSlipText('NSSF Tier II Deduction',
+                      salary['nssf_tier_ii_deduction'].toStringAsFixed(2)),
+                if (salary['housing_levy'] != null)
+                  _buildSlipText('Housing Levy',
+                      salary['housing_levy'].toStringAsFixed(2)),
+                if (salary['paye_deduction'] != null)
+                  _buildSlipText('PAYE Deduction',
+                      salary['paye_deduction'].toStringAsFixed(2)),
+                if (salary['loan_repayment'] != null)
+                  _buildSlipText('Loan Repayment',
+                      salary['loan_repayment'].toStringAsFixed(2)),
+                if (salary['pension_contributions'] != null)
+                  _buildSlipText('Pension Contributions',
+                      salary['pension_contributions'].toStringAsFixed(2)),
+                if (salary['insurance_relief'] != null)
+                  _buildSlipText('Insurance Relief',
+                      salary['insurance_relief'].toStringAsFixed(2)),
+                if (salary['deductions'] != null)
+                  _buildSlipText('Other Deductions',
+                      salary['deductions'].toStringAsFixed(2)),
+                if (salary['total_deductions'] != null)
+                  _buildSlipText('Total Deductions',
+                      salary['total_deductions'].toStringAsFixed(2)),
+                if (salary['net_pay'] != null)
+                  _buildSlipText(
+                      'Net Pay', salary['net_pay'].toStringAsFixed(2)),
+              ],
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: Text('Close', style: TextStyle(color: Colors.teal[700])),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSlipText(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('$label:', style: TextStyle(color: Colors.teal[900])),
+          Text(value, style: TextStyle(color: Colors.grey[800])),
         ],
       ),
     );
@@ -487,128 +517,220 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pay Salaries'),
-        backgroundColor: Colors.teal,
+      appBar: CustomAppBar(
+        title: 'Pay Salaries',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          print('Profile tapped');
+        },
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                DropdownButton<int>(
-                  value: selectedMonth,
-                  items: List.generate(12, (index) => index + 1)
-                      .map((month) => DropdownMenuItem(
-                            value: month,
-                            child: Text(DateFormat('MMMM')
-                                .format(DateTime(selectedYear, month))),
-                          ))
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedMonth = value!;
-                      salaries.clear();
-                      selectedEmployees.clear();
-                      searchKeyword = '';
-                    });
-                  },
-                ),
-                DropdownButton<int>(
-                  value: selectedYear,
-                  items:
-                      List.generate(10, (index) => DateTime.now().year - index)
-                          .map((year) => DropdownMenuItem(
-                                value: year,
-                                child: Text(year.toString()),
-                              ))
-                          .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedYear = value!;
-                      salaries.clear();
-                      selectedEmployees.clear();
-                      searchKeyword = '';
-                    });
-                  },
-                ),
-                DropdownButton<String>(
-                  value: selectedCompany ?? 'All Companies',
-                  items: companyNames
-                      .map((company) => DropdownMenuItem(
-                            value: company,
-                            child: Text(company),
-                          ))
-                      .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedCompany = value;
-                      salaries.clear();
-                      selectedEmployees.clear();
-                      searchKeyword = '';
-                    });
-                  },
-                ),
-                ElevatedButton(
-                  onPressed: isLoading ? null : fetchAndCalculateSalaries,
-                  child: isLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('Fetch Salaries'),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Search by Full Name',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    searchKeyword = value.toLowerCase();
-                  });
-                },
-              ),
-            ),
-            if (salaries.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Instructions: Check the box next to an employee to exclude them from bulk payment.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                ),
-              ),
-            Expanded(
-              child: salaries.isEmpty
-                  ? const Center(child: Text('No salaries available'))
-                  : SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: DataTable(
-                          columns: _buildTableColumns(),
-                          rows: _buildFilteredTableRows(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.teal[50]!, Colors.teal[100]!],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Container(
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.white, Colors.teal[50]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildDropdown(
+                          value: selectedMonth,
+                          items: List.generate(12, (index) => index + 1),
+                          itemBuilder: (month) => DateFormat('MMMM')
+                              .format(DateTime(selectedYear, month)),
+                          onChanged: (value) {
+                            setState(() {
+                              selectedMonth = value!;
+                              salaries.clear();
+                              selectedEmployees.clear();
+                              searchKeyword = '';
+                            });
+                          },
                         ),
                       ),
-                    ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: isLoading ? null : exportMasterPayroll,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                      const SizedBox(width: 8.0),
+                      Expanded(
+                        child: _buildDropdown(
+                          value: selectedYear,
+                          items: List.generate(
+                              10, (index) => DateTime.now().year - index),
+                          itemBuilder: (year) => year.toString(),
+                          onChanged: (value) {
+                            setState(() {
+                              selectedYear = value!;
+                              salaries.clear();
+                              selectedEmployees.clear();
+                              searchKeyword = '';
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8.0),
+                      Expanded(
+                        child: _buildDropdown(
+                          value: selectedCompany ?? 'All Companies',
+                          items: companyNames,
+                          itemBuilder: (company) => company,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedCompany = value;
+                              salaries.clear();
+                              selectedEmployees.clear();
+                              searchKeyword = '';
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8.0),
+                      ElevatedButton(
+                        onPressed: isLoading ? null : fetchAndCalculateSalaries,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal[700],
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: isLoading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white)
+                            : const Text('Fetch Salaries'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              child: isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Export Master Payroll'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                child: Container(
+                  padding: const EdgeInsets.all(8.0),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.white, Colors.teal[50]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Search by Full Name',
+                      labelStyle: TextStyle(color: Colors.teal[900]),
+                      prefixIcon: Icon(Icons.search, color: Colors.teal[700]),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.teal[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.teal[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.teal[700]!)),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        searchKeyword = value.toLowerCase();
+                      });
+                    },
+                    style: TextStyle(color: Colors.grey[800]),
+                  ),
+                ),
+              ),
+              if (salaries.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(
+                    'Instructions: Check the box next to an employee to exclude them from bulk payment.',
+                    style: TextStyle(fontSize: 12, color: Colors.teal[900]),
+                  ),
+                ),
+              Expanded(
+                child: isLoading
+                    ? Center(
+                        child:
+                            CircularProgressIndicator(color: Colors.teal[700]),
+                      )
+                    : salaries.isEmpty
+                        ? Center(
+                            child: Text('No salaries available',
+                                style: TextStyle(
+                                    color: Colors.teal[900], fontSize: 16)),
+                          )
+                        : Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white, Colors.teal[50]!],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: DataTable(
+                                    columnSpacing: 16,
+                                    dataRowHeight: 60,
+                                    headingRowColor: MaterialStateProperty.all(
+                                        Colors.teal[100]),
+                                    columns: _buildTableColumns(),
+                                    rows: _buildFilteredTableRows(),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: isLoading ? null : exportMasterPayroll,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal[700],
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 50, vertical: 15),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Export Master Payroll'),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: Column(
@@ -657,6 +779,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                   SnackBar(
                     content: Text(
                         'Single Payment initiated for ${selectedEmployee['fullname']}'),
+                    backgroundColor: Colors.teal[700],
                   ),
                 );
               } catch (e) {
@@ -667,10 +790,10 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                 setState(() => isLoading = false);
               }
             },
-            backgroundColor: Colors.teal,
+            backgroundColor: Colors.teal[700],
             heroTag: 'single_payment',
             tooltip: 'Single Payment',
-            child: const Icon(Icons.payment),
+            child: const Icon(Icons.payment, color: Colors.white),
           ),
           const SizedBox(height: 16),
           FloatingActionButton(
@@ -706,6 +829,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                   SnackBar(
                     content: Text(
                         'Bulk Payment initiated for ${employeesToPay.length} employees'),
+                    backgroundColor: Colors.teal[700],
                   ),
                 );
               } catch (e) {
@@ -716,10 +840,10 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                 setState(() => isLoading = false);
               }
             },
-            backgroundColor: Colors.teal,
+            backgroundColor: Colors.teal[700],
             heroTag: 'bulk_payment',
             tooltip: 'Bulk Payment',
-            child: const Icon(Icons.payments),
+            child: const Icon(Icons.payments, color: Colors.white),
           ),
         ],
       ),
@@ -729,6 +853,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
   List<DataColumn> _buildTableColumns() {
     final keys = [
       'Select',
+      'Employee ID', // Added Employee ID
       'Company Name',
       'Full Name',
       'Gross Pay',
@@ -753,7 +878,14 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
 
     return keys.map((key) {
       return DataColumn(
-        label: Text(key.replaceAll('_', ' ').capitalize()),
+        label: Text(
+          key.replaceAll('_', ' ').capitalize(),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.teal[900],
+            fontSize: 14,
+          ),
+        ),
       );
     }).toList();
   }
@@ -770,6 +902,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
     return filteredSalaries.map((salary) {
       final keys = [
         'Select',
+        'employee_id', // Added employee_id
         'company_name',
         'fullname',
         'gross_pay',
@@ -807,6 +940,7 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                       });
                     }
                   : null,
+              activeColor: Colors.teal[700],
             ));
           } else {
             final value = salary[key] ??
@@ -814,23 +948,70 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
                     ? 'Unknown'
                     : key == 'company_name'
                         ? ''
-                        : key == 'house_allowance'
-                            ? 0.0
-                            : 0.0);
+                        : key == 'employee_id'
+                            ? '' // Default for employee_id
+                            : key == 'house_allowance'
+                                ? 0.0
+                                : 0.0);
 
             if (value is num) {
               if (salary['fullname'] == 'Totals') {
-                return DataCell(Text(value.toStringAsFixed(2),
-                    style: const TextStyle(fontWeight: FontWeight.bold)));
+                return DataCell(Text(
+                  value.toStringAsFixed(2),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.teal[900]),
+                ));
               }
-              return DataCell(Text(value.toStringAsFixed(2)));
+              return DataCell(
+                Text(
+                  value.toStringAsFixed(2),
+                  style: TextStyle(color: Colors.grey[800]),
+                ),
+                onTap: () => showSalarySlip(salary),
+              );
             } else {
-              return DataCell(Text(value.toString()));
+              return DataCell(
+                Text(value.toString(),
+                    style: TextStyle(color: Colors.grey[800])),
+                onTap: () => showSalarySlip(salary),
+              );
             }
           }
         }).toList(),
       );
     }).toList();
+  }
+
+  Widget _buildDropdown<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.teal[200]!),
+      ),
+      child: DropdownButton<T>(
+        value: value,
+        items: items
+            .map((item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    itemBuilder(item),
+                    style: TextStyle(color: Colors.teal[900]),
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        underline: const SizedBox(),
+        dropdownColor: Colors.white,
+        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
+      ),
+    );
   }
 }
 

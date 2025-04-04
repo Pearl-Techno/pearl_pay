@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
-import '../services.dart';
+import '../services/services.dart';
+import '../widgets/custom_app_bar.dart';
 
 class PaidSalariesScreen extends StatefulWidget {
   const PaidSalariesScreen({super.key});
@@ -16,30 +18,65 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
   bool _isLoading = true;
   String? _selectedCompany;
   List<String> _companyNames = ['All Companies'];
+  int _selectedMonth = DateTime.now().month;
+  int _selectedYear = DateTime.now().year;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _fetchSalaries();
+    _fetchCompanies();
+    _searchController.addListener(_fetchSalaries);
+  }
+
+  Future<void> _fetchCompanies() async {
+    try {
+      final employees = await _apiService.getAllEmployees();
+      setState(() {
+        _companyNames = ['All Companies'] +
+            employees
+                .map((e) => e['company_name'] as String?)
+                .where((name) => name != null && name.isNotEmpty)
+                .toSet()
+                .cast<String>()
+                .toList();
+      });
+      _fetchSalaries();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error fetching companies: $e')),
+      );
+    }
   }
 
   Future<void> _fetchSalaries() async {
     setState(() => _isLoading = true);
     try {
       final salaries = await _apiService.getSalaries();
-      final paidSalaries = salaries
-          .where((salary) => salary['status']?.toLowerCase() == 'paid')
-          .toList();
+      final filteredSalaries = salaries.where((salary) {
+        final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
+        if (paymentDate == null) return false;
+        final matchesMonth = paymentDate.month == _selectedMonth;
+        final matchesYear = paymentDate.year == _selectedYear;
+        final matchesCompany = _selectedCompany == null ||
+            _selectedCompany == 'All Companies' ||
+            salary['company_name'] == _selectedCompany;
+        final matchesStatus = salary['status']?.toLowerCase() == 'paid';
+        final searchText = _searchController.text.toLowerCase();
+        final matchesSearch = searchText.isEmpty ||
+            salary['fullname']?.toLowerCase().contains(searchText) == true ||
+            salary['employee_id']?.toString().contains(searchText) == true ||
+            salary['company_name']?.toLowerCase().contains(searchText) == true;
+
+        return matchesMonth &&
+            matchesYear &&
+            matchesCompany &&
+            matchesStatus &&
+            matchesSearch;
+      }).toList();
 
       setState(() {
-        _salaries = paidSalaries;
-        _companyNames = ['All Companies'] +
-            paidSalaries
-                .map((s) => s['company_name'] as String?)
-                .where((name) => name != null && name.isNotEmpty)
-                .toSet()
-                .cast<String>()
-                .toList();
+        _salaries = filteredSalaries;
         _isLoading = false;
       });
     } catch (e) {
@@ -50,26 +87,29 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
     }
   }
 
-  List<Map<String, dynamic>> _getFilteredSalaries() {
-    if (_selectedCompany == null || _selectedCompany == 'All Companies') {
-      return _salaries;
-    }
-    return _salaries
-        .where((salary) => salary['company_name'] == _selectedCompany)
-        .toList();
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Paid Salaries'),
-        backgroundColor: Colors.teal,
+      appBar: CustomAppBar(
+        title: 'Paid Salaries',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          print('Profile tapped');
+        },
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.teal.shade100, Colors.teal.shade400],
+            colors: [Colors.teal[50]!, Colors.teal[100]!],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -77,95 +117,218 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              DropdownButtonFormField<String>(
-                value: _selectedCompany ?? 'All Companies',
-                decoration: const InputDecoration(
-                  labelText: 'Filter by Company',
-                  border: OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.white,
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                items: _companyNames
-                    .map((company) => DropdownMenuItem(
-                          value: company,
-                          child: Text(company),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _selectedCompany = value;
-                  });
-                },
+                child: Container(
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.white, Colors.teal[50]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildDropdown(
+                            value: _selectedMonth,
+                            items: List.generate(12, (index) => index + 1),
+                            itemBuilder: (month) => DateFormat('MMMM')
+                                .format(DateTime(_selectedYear, month)),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedMonth = value!;
+                                _fetchSalaries();
+                              });
+                            },
+                          ),
+                          _buildDropdown(
+                            value: _selectedYear,
+                            items: List.generate(
+                                10, (index) => DateTime.now().year - index),
+                            itemBuilder: (year) => year.toString(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedYear = value!;
+                                _fetchSalaries();
+                              });
+                            },
+                          ),
+                          _buildDropdown(
+                            value: _selectedCompany ?? 'All Companies',
+                            items: _companyNames,
+                            itemBuilder: (company) => company,
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCompany = value;
+                                _fetchSalaries();
+                              });
+                            },
+                          ),
+                          ElevatedButton(
+                            onPressed: _fetchSalaries,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal[700],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: const Text('Refresh'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search by name, ID, or company',
+                          prefixIcon:
+                              Icon(Icons.search, color: Colors.teal[700]),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.teal[200]!),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.teal[200]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide(color: Colors.teal[700]!),
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? Center(
+                        child:
+                            CircularProgressIndicator(color: Colors.teal[700]))
                     : _salaries.isEmpty
-                        ? const Center(
-                            child: Text('No paid salaries available'))
-                        : SingleChildScrollView(
-                            scrollDirection: Axis.vertical,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: DataTable(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black26,
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
+                        ? Center(
+                            child: Text(
+                              'No paid salaries available for selected filters',
+                              style: TextStyle(
+                                  color: Colors.teal[900], fontSize: 16),
+                            ),
+                          )
+                        : Card(
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white, Colors.teal[50]!],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                columns: const [
-                                  DataColumn(
-                                      label: Text('Employee ID',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                  DataColumn(
-                                      label: Text('Full Name',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                  DataColumn(
-                                      label: Text('Company Name',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                  DataColumn(
-                                      label: Text('Gross Pay',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                  DataColumn(
-                                      label: Text('Net Pay',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                  DataColumn(
-                                      label: Text('Payment Date',
-                                          style: TextStyle(
-                                              fontWeight: FontWeight.bold))),
-                                ],
-                                rows: _getFilteredSalaries().map((salary) {
-                                  return DataRow(
-                                    cells: [
-                                      DataCell(Text(
-                                          salary['employee_id']?.toString() ??
-                                              'N/A')),
-                                      DataCell(
-                                          Text(salary['fullname'] ?? 'N/A')),
-                                      DataCell(Text(
-                                          salary['company_name'] ?? 'N/A')),
-                                      DataCell(Text(
-                                          'KES ${salary['gross_pay']?.toString() ?? '0.00'}')),
-                                      DataCell(Text(
-                                          'KES ${salary['net_pay']?.toString() ?? '0.00'}')),
-                                      DataCell(Text(
-                                          salary['payment_date'] ?? 'N/A')),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.vertical,
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: DataTable(
+                                    columnSpacing: 16,
+                                    dataRowHeight: 60,
+                                    headingRowColor: MaterialStateProperty.all(
+                                        Colors.teal[100]),
+                                    columns: [
+                                      _buildDataColumn('ID'),
+                                      _buildDataColumn('Employee ID'),
+                                      _buildDataColumn('Full Name'),
+                                      _buildDataColumn('Company'),
+                                      _buildDataColumn('Gross Pay'),
+                                      _buildDataColumn('Basic Pay'),
+                                      _buildDataColumn('Non-Cash Benefits'),
+                                      _buildDataColumn('Other Earnings'),
+                                      _buildDataColumn('Overtime'),
+                                      _buildDataColumn('Absenteeism'),
+                                      _buildDataColumn('Taxable Income'),
+                                      _buildDataColumn('SHIF'),
+                                      _buildDataColumn('PAYE'),
+                                      _buildDataColumn('NSSF'),
+                                      _buildDataColumn('Pension'),
+                                      _buildDataColumn('Loan'),
+                                      _buildDataColumn('Deductions'),
+                                      _buildDataColumn('Housing Levy'),
+                                      _buildDataColumn('Levy Relief'),
+                                      _buildDataColumn('Net Pay'),
+                                      _buildDataColumn('Status'),
+                                      _buildDataColumn('Pay Date'),
                                     ],
-                                  );
-                                }).toList(),
+                                    rows: _salaries.map((salary) {
+                                      return DataRow(
+                                        cells: [
+                                          _buildDataCell(
+                                              salary['id']?.toString() ??
+                                                  'N/A'),
+                                          _buildDataCell(salary['employee_id']
+                                                  ?.toString() ??
+                                              'N/A'),
+                                          _buildDataCell(
+                                              salary['fullname'] ?? 'N/A'),
+                                          _buildDataCell(
+                                              salary['company_name'] ?? 'N/A'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['gross_pay']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['basic_pay']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['non_cash_benefits']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['other_earnings']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['overtime_amount']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['absenteeism_deduction']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['taxable_income']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['nhif_deduction']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['paye_deduction']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['nssf_deduction']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['pension_contributions']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['loan_repayment']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['deductions']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['housing_levy']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['housing_levy_relief']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              'KES ${(double.tryParse(salary['net_pay']?.toString() ?? '0.0') ?? 0.0).toStringAsFixed(2)}'),
+                                          _buildDataCell(
+                                              salary['status'] ?? 'N/A'),
+                                          _buildDataCell(
+                                              salary['payment_date'] ?? 'N/A'),
+                                        ],
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -173,6 +336,63 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  DataColumn _buildDataColumn(String label) {
+    return DataColumn(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: Colors.teal[900],
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildDataCell(String text) {
+    return DataCell(
+      Text(
+        text,
+        style: TextStyle(
+          color: Colors.grey[800],
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.teal[200]!),
+      ),
+      child: DropdownButton<T>(
+        value: value,
+        items: items
+            .map((item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    itemBuilder(item),
+                    style: TextStyle(color: Colors.teal[900]),
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        underline: const SizedBox(),
+        dropdownColor: Colors.white,
+        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
       ),
     );
   }

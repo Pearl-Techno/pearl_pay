@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-import '../services.dart';
+import '../services/services.dart';
+import '../widgets/custom_app_bar.dart';
 
 class InsuranceReliefScreen extends StatefulWidget {
   const InsuranceReliefScreen({super.key});
@@ -105,7 +106,10 @@ class _InsuranceReliefScreenState extends State<InsuranceReliefScreen> {
 
       try {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Saving insurance relief...')),
+          SnackBar(
+            content: Text('Saving insurance relief...'),
+            backgroundColor: Colors.teal[700],
+          ),
         );
 
         await _apiService.addInsuranceRelief(reliefData);
@@ -122,7 +126,7 @@ class _InsuranceReliefScreenState extends State<InsuranceReliefScreen> {
             content: Text(
               'Insurance Relief Saved: ${_employees.firstWhere((emp) => emp['employee_id'].toString() == employeeId)['fullname']}, Premium: KSh $premium, Relief: KSh $relief',
             ),
-            backgroundColor: Colors.teal,
+            backgroundColor: Colors.teal[700],
           ),
         );
 
@@ -157,254 +161,504 @@ class _InsuranceReliefScreenState extends State<InsuranceReliefScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Insurance Relief'),
-        backgroundColor: Colors.teal,
+      appBar: CustomAppBar(
+        title: 'Insurance Relief',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          print('Profile tapped');
+        },
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _isLoadingEmployees || _isLoadingReliefs
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(child: Text(_errorMessage!))
-                : Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          DropdownButton<int>(
-                            value: _selectedMonth,
-                            items: List.generate(12, (index) => index + 1)
-                                .map((month) => DropdownMenuItem(
-                                      value: month,
-                                      child: Text(DateFormat('MMMM').format(
-                                          DateTime(_selectedYear, month))),
-                                    ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedMonth = value!;
-                                _fetchReliefRecords();
-                              });
-                            },
-                          ),
-                          DropdownButton<int>(
-                            value: _selectedYear,
-                            items: List.generate(10,
-                                    (index) => DateTime.now().year - index + 1)
-                                .map((year) => DropdownMenuItem(
-                                      value: year,
-                                      child: Text(year.toString()),
-                                    ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedYear = value!;
-                                _fetchReliefRecords();
-                              });
-                            },
-                          ),
-                          ElevatedButton(
-                            onPressed: _fetchReliefRecords,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16.0),
-                            ),
-                            child: const Text(
-                              'Fetch Reliefs',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.teal[50]!, Colors.teal[100]!],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _isLoadingEmployees || _isLoadingReliefs
+              ? Center(
+                  child: CircularProgressIndicator(color: Colors.teal[700]),
+                )
+              : _errorMessage != null
+                  ? Center(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.teal[900], fontSize: 16),
                       ),
-                      const SizedBox(height: 16.0),
-                      Expanded(
-                        flex: 1,
-                        child: Form(
-                          key: _formKey,
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                    )
+                  : Column(
+                      children: [
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.white, Colors.teal[50]!],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.all(16.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                DropdownButtonFormField<String>(
-                                  value: _selectedCompany,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Select Company',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: _companyNames.map((company) {
-                                    return DropdownMenuItem(
-                                      value: company,
-                                      child: Text(company),
-                                    );
-                                  }).toList(),
+                                DropdownButton<int>(
+                                  value: _selectedMonth,
+                                  items: List.generate(12, (index) => index + 1)
+                                      .map((month) => DropdownMenuItem(
+                                            value: month,
+                                            child: Text(
+                                              DateFormat('MMMM').format(
+                                                  DateTime(
+                                                      _selectedYear, month)),
+                                              style: TextStyle(
+                                                  color: Colors.teal[900]),
+                                            ),
+                                          ))
+                                      .toList(),
                                   onChanged: (value) {
                                     setState(() {
-                                      _selectedCompany = value;
-                                      _selectedEmployeeId = null;
+                                      _selectedMonth = value!;
+                                      _fetchReliefRecords();
                                     });
                                   },
-                                  validator: (value) {
-                                    if (value == null)
-                                      return 'Please select a company';
-                                    return null;
-                                  },
+                                  dropdownColor: Colors.white,
+                                  icon: Icon(Icons.arrow_drop_down,
+                                      color: Colors.teal[700]),
                                 ),
-                                const SizedBox(height: 16.0),
-                                DropdownButtonFormField<String>(
-                                  value: _selectedEmployeeId,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Select Employee',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: _employees
-                                      .where((employee) =>
-                                          _selectedCompany == null ||
-                                          _selectedCompany == 'All Companies' ||
-                                          employee['company_name'] ==
-                                              _selectedCompany)
-                                      .map((employee) {
-                                    return DropdownMenuItem(
-                                      value: employee['employee_id'].toString(),
-                                      child: Text(
-                                          employee['fullname'] ?? 'Unknown'),
-                                    );
-                                  }).toList(),
+                                DropdownButton<int>(
+                                  value: _selectedYear,
+                                  items: List.generate(
+                                          10,
+                                          (index) =>
+                                              DateTime.now().year - index + 1)
+                                      .map((year) => DropdownMenuItem(
+                                            value: year,
+                                            child: Text(
+                                              year.toString(),
+                                              style: TextStyle(
+                                                  color: Colors.teal[900]),
+                                            ),
+                                          ))
+                                      .toList(),
                                   onChanged: (value) {
                                     setState(() {
-                                      _selectedEmployeeId = value;
+                                      _selectedYear = value!;
+                                      _fetchReliefRecords();
                                     });
                                   },
-                                  validator: (value) {
-                                    if (value == null)
-                                      return 'Please select an employee';
-                                    return null;
-                                  },
+                                  dropdownColor: Colors.white,
+                                  icon: Icon(Icons.arrow_drop_down,
+                                      color: Colors.teal[700]),
                                 ),
-                                const SizedBox(height: 16.0),
-                                TextFormField(
-                                  controller: _premiumController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Premium Amount (KSh)',
-                                    border: OutlineInputBorder(),
-                                    hintText: 'e.g., 10000.00',
-                                    prefixText: 'KSh ',
+                                ElevatedButton(
+                                  onPressed: _fetchReliefRecords,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal[700],
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16.0),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter a premium amount';
-                                    }
-                                    if (double.tryParse(value) == null ||
-                                        double.parse(value) <= 0) {
-                                      return 'Please enter a valid positive amount';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16.0),
-                                TextFormField(
-                                  controller: _percentageController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Relief Percentage (%)',
-                                    border: OutlineInputBorder(),
-                                    hintText: 'e.g., 15',
-                                    suffixText: '%',
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter a percentage';
-                                    }
-                                    final percent = double.tryParse(value);
-                                    if (percent == null ||
-                                        percent < 0 ||
-                                        percent > 100) {
-                                      return 'Please enter a valid percentage (0-100)';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 16.0),
-                                TextFormField(
-                                  controller: _reliefController,
-                                  readOnly: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Calculated Relief (KSh)',
-                                    border: OutlineInputBorder(),
-                                    prefixText: 'KSh ',
-                                  ),
-                                ),
-                                const SizedBox(height: 24.0),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed: _submitForm,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.teal,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 16.0),
-                                    ),
-                                    child: const Text(
-                                      'Save Relief',
-                                      style: TextStyle(fontSize: 16),
-                                    ),
+                                  child: const Text(
+                                    'Fetch Reliefs',
+                                    style: TextStyle(fontSize: 14),
                                   ),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        flex: 1,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 16.0),
-                            const Text(
-                              'Insurance Relief Records',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                        const SizedBox(height: 16.0),
+                        Expanded(
+                          flex: 1,
+                          child: Form(
+                            key: _formKey,
+                            child: SingleChildScrollView(
+                              child: Card(
+                                elevation: 4,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Colors.white, Colors.teal[50]!],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      DropdownButtonFormField<String>(
+                                        value: _selectedCompany,
+                                        decoration: InputDecoration(
+                                          labelText: 'Select Company',
+                                          labelStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[700]!)),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                        ),
+                                        items: _companyNames.map((company) {
+                                          return DropdownMenuItem(
+                                            value: company,
+                                            child: Text(company,
+                                                style: TextStyle(
+                                                    color: Colors.teal[900])),
+                                          );
+                                        }).toList(),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _selectedCompany = value;
+                                            _selectedEmployeeId = null;
+                                          });
+                                        },
+                                        validator: (value) {
+                                          if (value == null)
+                                            return 'Please select a company';
+                                          return null;
+                                        },
+                                        dropdownColor: Colors.white,
+                                        icon: Icon(Icons.arrow_drop_down,
+                                            color: Colors.teal[700]),
+                                      ),
+                                      const SizedBox(height: 16.0),
+                                      DropdownButtonFormField<String>(
+                                        value: _selectedEmployeeId,
+                                        decoration: InputDecoration(
+                                          labelText: 'Select Employee',
+                                          labelStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[700]!)),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                        ),
+                                        items: _employees
+                                            .where((employee) =>
+                                                _selectedCompany == null ||
+                                                _selectedCompany ==
+                                                    'All Companies' ||
+                                                employee['company_name'] ==
+                                                    _selectedCompany)
+                                            .map((employee) {
+                                          return DropdownMenuItem(
+                                            value: employee['employee_id']
+                                                .toString(),
+                                            child: Text(
+                                                employee['fullname'] ??
+                                                    'Unknown',
+                                                style: TextStyle(
+                                                    color: Colors.teal[900])),
+                                          );
+                                        }).toList(),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            _selectedEmployeeId = value;
+                                          });
+                                        },
+                                        validator: (value) {
+                                          if (value == null)
+                                            return 'Please select an employee';
+                                          return null;
+                                        },
+                                        dropdownColor: Colors.white,
+                                        icon: Icon(Icons.arrow_drop_down,
+                                            color: Colors.teal[700]),
+                                      ),
+                                      const SizedBox(height: 16.0),
+                                      TextFormField(
+                                        controller: _premiumController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: 'Premium Amount (KSh)',
+                                          labelStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[700]!)),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                          hintText: 'e.g., 10000.00',
+                                          hintStyle: TextStyle(
+                                              color: Colors.grey[600]),
+                                          prefixText: 'KSh ',
+                                          prefixStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                        ),
+                                        validator: (value) {
+                                          if (value == null || value.isEmpty) {
+                                            return 'Please enter a premium amount';
+                                          }
+                                          if (double.tryParse(value) == null ||
+                                              double.parse(value) <= 0) {
+                                            return 'Please enter a valid positive amount';
+                                          }
+                                          return null;
+                                        },
+                                        style:
+                                            TextStyle(color: Colors.grey[800]),
+                                      ),
+                                      const SizedBox(height: 16.0),
+                                      TextFormField(
+                                        controller: _percentageController,
+                                        keyboardType: TextInputType.number,
+                                        decoration: InputDecoration(
+                                          labelText: 'Relief Percentage (%)',
+                                          labelStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[700]!)),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                          hintText: 'e.g., 15',
+                                          hintStyle: TextStyle(
+                                              color: Colors.grey[600]),
+                                          suffixText: '%',
+                                          suffixStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                        ),
+                                        validator: (value) {
+                                          if (value == null || value.isEmpty) {
+                                            return 'Please enter a percentage';
+                                          }
+                                          final percent =
+                                              double.tryParse(value);
+                                          if (percent == null ||
+                                              percent < 0 ||
+                                              percent > 100) {
+                                            return 'Please enter a valid percentage (0-100)';
+                                          }
+                                          return null;
+                                        },
+                                        style:
+                                            TextStyle(color: Colors.grey[800]),
+                                      ),
+                                      const SizedBox(height: 16.0),
+                                      TextFormField(
+                                        controller: _reliefController,
+                                        readOnly: true,
+                                        decoration: InputDecoration(
+                                          labelText: 'Calculated Relief (KSh)',
+                                          labelStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                          border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[200]!)),
+                                          focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              borderSide: BorderSide(
+                                                  color: Colors.teal[700]!)),
+                                          filled: true,
+                                          fillColor: Colors.white,
+                                          prefixText: 'KSh ',
+                                          prefixStyle: TextStyle(
+                                              color: Colors.teal[900]),
+                                        ),
+                                        style:
+                                            TextStyle(color: Colors.grey[800]),
+                                      ),
+                                      const SizedBox(height: 24.0),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: ElevatedButton(
+                                          onPressed: _submitForm,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.teal[700],
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 16.0),
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8)),
+                                          ),
+                                          child: const Text(
+                                            'Save Relief',
+                                            style: TextStyle(fontSize: 16),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 8.0),
-                            Expanded(
-                              child: _reliefRecords.isEmpty
-                                  ? const Center(
-                                      child: Text('No relief records found'))
-                                  : ListView.builder(
-                                      itemCount: _reliefRecords.length,
-                                      itemBuilder: (context, index) {
-                                        final record = _reliefRecords[index];
-                                        final employee = _employees.firstWhere(
-                                          (emp) =>
-                                              emp['employee_id'].toString() ==
-                                              record['employee_id'],
-                                          orElse: () => {'fullname': 'Unknown'},
-                                        );
-                                        return Card(
-                                          margin: const EdgeInsets.symmetric(
-                                              vertical: 4.0),
-                                          child: ListTile(
-                                            title: Text(employee['fullname']),
-                                            subtitle: Text(
-                                              'Premium: KSh ${record['premium_amount'] ?? 'N/A'} | Relief: KSh ${record['relief_amount'] ?? 'N/A'} | ${record['date'] ?? 'N/A'}',
-                                            ),
-                                            trailing: Text(
-                                                '${record['relief_percentage'] ?? 'N/A'}%'),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                        Expanded(
+                          flex: 1,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 16.0),
+                              Text(
+                                'Insurance Relief Records',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.teal[900],
+                                ),
+                              ),
+                              const SizedBox(height: 8.0),
+                              Expanded(
+                                child: _reliefRecords.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          'No relief records found',
+                                          style: TextStyle(
+                                              color: Colors.teal[900],
+                                              fontSize: 16),
+                                        ),
+                                      )
+                                    : Card(
+                                        elevation: 4,
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.white,
+                                                Colors.teal[50]!
+                                              ],
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: ListView.builder(
+                                            itemCount: _reliefRecords.length,
+                                            itemBuilder: (context, index) {
+                                              final record =
+                                                  _reliefRecords[index];
+                                              final employee =
+                                                  _employees.firstWhere(
+                                                      (emp) =>
+                                                          emp['employee_id']
+                                                              .toString() ==
+                                                          record['employee_id'],
+                                                      orElse: () => {
+                                                            'fullname':
+                                                                'Unknown'
+                                                          });
+                                              return Card(
+                                                margin:
+                                                    const EdgeInsets.symmetric(
+                                                        vertical: 4.0,
+                                                        horizontal: 8.0),
+                                                elevation: 2,
+                                                shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8)),
+                                                child: ListTile(
+                                                  title: Text(
+                                                    employee['fullname'],
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.teal[900]),
+                                                  ),
+                                                  subtitle: Text(
+                                                    'Premium: KSh ${record['premium_amount'] ?? 'N/A'} | Relief: KSh ${record['relief_amount'] ?? 'N/A'} | ${record['date'] ?? 'N/A'}',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]),
+                                                  ),
+                                                  trailing: Text(
+                                                    '${record['relief_percentage'] ?? 'N/A'}%',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.teal[700]),
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+        ),
       ),
     );
   }

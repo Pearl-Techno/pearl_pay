@@ -1,193 +1,287 @@
 import 'package:flutter/material.dart';
 
-class SettingsScreen extends StatefulWidget {
+import '../company_management/add_company_screen.dart';
+import '../settings_screens/about_settings_screen.dart';
+import '../settings_screens/account_settings_screen.dart';
+import '../settings_screens/help_settings_screen.dart';
+import '../settings_screens/housing_levy_rates_screen.dart';
+import '../settings_screens/language_settings_screen.dart';
+import '../settings_screens/loan_rates_screen.dart';
+import '../settings_screens/notifications_settings_screen.dart';
+import '../settings_screens/nssf_rates_screen.dart';
+import '../settings_screens/overtime_rates_screen.dart';
+import '../settings_screens/paye_rates_screen.dart';
+import '../settings_screens/privacy_settings_screen.dart';
+import '../settings_screens/shif_rates_screen.dart';
+import '../widgets/custom_app_bar.dart';
+
+
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  @override
-  _SettingsScreenState createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  String? selectedRate;
-
-  void _showRateDetails(String rateType) {
-    setState(() {
-      selectedRate = rateType;
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Settings'),
-        backgroundColor: Colors.teal,
+      appBar: CustomAppBar(
+        title: 'Settings',
+        backgroundColor: Colors.teal[800],
+        onNotificationTap: () {
+          // Add your notification handling logic here
+          print('Notifications tapped');
+        },
+        onProfileTap: () {
+          // Add your profile handling logic here
+          print('Profile tapped');
+        },
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Wrap(
-                spacing: 16.0,
-                runSpacing: 16.0,
-                children: [
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.account_circle,
-                    title: 'Account',
-                    subtitle: 'Manage your account settings',
-                    onTap: () {
-                      // Navigate to Account settings screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.notifications,
-                    title: 'Notifications',
-                    subtitle: 'Manage your notification settings',
-                    onTap: () {
-                      // Navigate to Notifications settings screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.lock,
-                    title: 'Privacy',
-                    subtitle: 'Manage your privacy settings',
-                    onTap: () {
-                      // Navigate to Privacy settings screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.language,
-                    title: 'Language',
-                    subtitle: 'Manage your language settings',
-                    onTap: () {
-                      // Navigate to Language settings screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.help,
-                    title: 'Help & Support',
-                    subtitle: 'Get help and support',
-                    onTap: () {
-                      // Navigate to Help & Support screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.info,
-                    title: 'About',
-                    subtitle: 'Learn more about the app',
-                    onTap: () {
-                      // Navigate to About screen
-                    },
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'SHIF Rates',
-                    subtitle: 'Set SHIF rates',
-                    onTap: () => _showRateDetails('SHIF Rates'),
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'NSSF Rates',
-                    subtitle: 'Set NSSF rates',
-                    onTap: () => _showRateDetails('NSSF Rates'),
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'Housing Levy Rates',
-                    subtitle: 'Set Housing Levy rates',
-                    onTap: () => _showRateDetails('Housing Levy Rates'),
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'Loan Rates',
-                    subtitle: 'Set Loan rates',
-                    onTap: () => _showRateDetails('Loan Rates'),
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'Overtime Rates',
-                    subtitle: 'Set Overtime rates',
-                    onTap: () => _showRateDetails('Overtime Rates'),
-                  ),
-                  _buildSettingsCard(
-                    context,
-                    icon: Icons.attach_money,
-                    title: 'PAYE Rates',
-                    subtitle: 'Set PAYE rates',
-                    onTap: () => _showRateDetails('PAYE Rates'),
-                  ),
-                ],
-              ),
-              if (selectedRate != null) ...[
-                SizedBox(height: 16),
-                Text(
-                  '$selectedRate Details',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.teal),
-                ),
-                SizedBox(height: 16),
-                _buildRateDetailsForm(selectedRate!),
-              ],
-            ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.teal[50]!, Colors.teal[100]!],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
           ),
+        ),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Settings Options',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.teal[900],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // First row with 7 tiles
+                    SizedBox(
+                      height: 110,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.account_circle,
+                            title: 'Account',
+                            subtitle: 'Manage account',
+                            destination: const AccountSettingsScreen(),
+                            backgroundColor: Colors.blue[50]!,
+                            iconColor: Colors.blue[500]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.notifications,
+                            title: 'Notifications',
+                            subtitle: 'Manage alerts',
+                            destination: const NotificationsSettingsScreen(),
+                            backgroundColor: Colors.green[50]!,
+                            iconColor: Colors.green[500]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.lock,
+                            title: 'Privacy',
+                            subtitle: 'Privacy settings',
+                            destination: const PrivacySettingsScreen(),
+                            backgroundColor: Colors.yellow[50]!,
+                            iconColor: Colors.yellow[700]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.language,
+                            title: 'Language',
+                            subtitle: 'Language options',
+                            destination: const LanguageSettingsScreen(),
+                            backgroundColor: Colors.orange[50]!,
+                            iconColor: Colors.orange[500]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.help,
+                            title: 'Help',
+                            subtitle: 'Get support',
+                            destination: const HelpSettingsScreen(),
+                            backgroundColor: Colors.purple[50]!,
+                            iconColor: Colors.purple[500]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.info,
+                            title: 'About',
+                            subtitle: 'App info',
+                            destination: const AboutSettingsScreen(),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[500]!,
+                            tileCount: 7,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.business,
+                            title: 'Add Company',
+                            subtitle: 'Add company',
+                            destination: const AddCompanyScreen(),
+                            backgroundColor: Colors.indigo[50]!,
+                            iconColor: Colors.indigo[500]!,
+                            tileCount: 7,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Second row with 6 tiles
+                    SizedBox(
+                      height: 110,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'SHIF Rates',
+                            subtitle: 'Set SHIF rates',
+                            destination: const SHIFRatesScreen(),
+                            backgroundColor: Colors.blue[50]!,
+                            iconColor: Colors.blue[500]!,
+                            tileCount: 6,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'NSSF Rates',
+                            subtitle: 'Set NSSF rates',
+                            destination: const NSSFRatesScreen(),
+                            backgroundColor: Colors.green[50]!,
+                            iconColor: Colors.green[500]!,
+                            tileCount: 6,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'Housing Levy',
+                            subtitle: 'Set levy rates',
+                            destination: const HousingLevyRatesScreen(),
+                            backgroundColor: Colors.yellow[50]!,
+                            iconColor: Colors.yellow[700]!,
+                            tileCount: 6,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'Loan Rates',
+                            subtitle: 'Set loan rates',
+                            destination: const LoanRatesScreen(),
+                            backgroundColor: Colors.orange[50]!,
+                            iconColor: Colors.orange[500]!,
+                            tileCount: 6,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'Overtime Rates',
+                            subtitle: 'Set overtime rates',
+                            destination: const OvertimeRatesScreen(),
+                            backgroundColor: Colors.purple[50]!,
+                            iconColor: Colors.purple[500]!,
+                            tileCount: 6,
+                          ),
+                          _buildSettingsTile(
+                            context,
+                            icon: Icons.attach_money,
+                            title: 'PAYE Rates',
+                            subtitle: 'Set PAYE rates',
+                            destination: const PAYERatesScreen(),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[500]!,
+                            tileCount: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildSettingsCard(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required String subtitle,
-      required VoidCallback onTap}) {
+  Widget _buildSettingsTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget destination,
+    required Color backgroundColor,
+    required Color iconColor,
+    required int tileCount,
+  }) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    const horizontalPadding = 32.0; // 16 on each side
+    final spacingBetweenTiles = 16.0 * (tileCount - 1);
+    final tileWidth =
+        (screenWidth - horizontalPadding - spacingBetweenTiles) / tileCount;
+
     return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shadowColor: Colors.grey.withOpacity(0.3),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => destination),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
         child: Container(
-          width: 150, // Fixed width for all cards
-          height: 150, // Fixed height for all cards
-          padding: const EdgeInsets.all(8.0),
+          width: tileWidth,
+          height: 100,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white, backgroundColor],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: Colors.teal, size: 40),
-              SizedBox(height: 8),
+              Icon(icon, size: 24, color: iconColor),
+              const SizedBox(height: 6),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.teal[900],
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 10,
-                  color: Colors.grey[600],
+                  color: Colors.grey[700],
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -195,380 +289,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
-  Widget _buildRateDetailsForm(String rateType) {
-    if (rateType == 'PAYE Rates') {
-      return _buildPayeRatesForm();
-    } else if (rateType == 'SHIF Rates') {
-      return _buildShifRatesForm();
-    } else if (rateType == 'Housing Levy Rates') {
-      return _buildHousingLevyRatesForm();
-    } else if (rateType == 'NSSF Rates') {
-      return _buildNssfRatesForm();
-    } else if (rateType == 'Loan Rates') {
-      return _buildLoanRatesForm();
-    } else if (rateType == 'Overtime Rates') {
-      return _buildOvertimeRatesForm();
-    }
-    return Container();
-  }
-
-  Widget _buildPayeRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set PAYE Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            _buildPayeRateRow('Up to 24,000', 'Up to 288,000', '10.0'),
-            _buildPayeRateRow('24,001 - 32,333', '288,001 - 388,000', '25.0'),
-            _buildPayeRateRow(
-                '32,334 - 500,000', '388,001 - 6,000,000', '30.0'),
-            _buildPayeRateRow(
-                '500,001 - 800,000', '6,000,001 - 9,600,000', '32.5'),
-            _buildPayeRateRow('Above 800,000', 'Above 9,600,000', '35.0'),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save PAYE rates
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPayeRateRow(
-      String monthlyRange, String annualRange, String rate) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextFormField(
-              initialValue: monthlyRange,
-              decoration: InputDecoration(
-                labelText: 'Monthly Range',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.text,
-            ),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: TextFormField(
-              initialValue: annualRange,
-              decoration: InputDecoration(
-                labelText: 'Annual Range',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.text,
-            ),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: TextFormField(
-              initialValue: rate,
-              decoration: InputDecoration(
-                labelText: 'Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShifRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set SHIF Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              initialValue: '2.75',
-              decoration: InputDecoration(
-                labelText: 'SHIF Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save SHIF rate
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHousingLevyRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set Housing Levy Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              initialValue: '1.5',
-              decoration: InputDecoration(
-                labelText: 'Housing Levy Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save Housing Levy rate
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNssfRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set NSSF Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'NSSF Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save NSSF rate
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoanRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set Loan Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Loan Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save Loan rate
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOvertimeRatesForm() {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set Overtime Rates',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.teal),
-            ),
-            SizedBox(height: 16),
-            TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Overtime Rate (%)',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                // Save Overtime rate
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                padding: EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: Text('Save'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
+

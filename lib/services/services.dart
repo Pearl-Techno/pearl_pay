@@ -31,20 +31,30 @@ class ApiEndpoints {
   static const String fetchEmployees = 'fetch_employees.php';
   static const String processLoanRepayment = 'process_loan_repayment.php';
   static const String addLoan = 'add_loan.php';
-  static const String saveSalary =
-      'pay_salaries.php'; // New endpoint for saving salaries
+  static const String saveSalary = 'pay_salaries.php';
   static const String getSalaries = 'get_paid_salaries.php';
 
   // New endpoints for deductions and benefits
   static const String addDeduction = 'add_deduction.php';
-  static const String fetchDeductionsList =
-      'fetch_deductions_list.php'; // Renamed to avoid conflict with fetchDeductions
+  static const String fetchDeductionsList = 'fetch_deductions_list.php';
   static const String addBenefit = 'add_benefit.php';
-  static const String fetchBenefits =
-      'fetch_non_cash_benefits.php'; // Updated to use non-cash benefits endpoint
+  static const String fetchBenefits = 'fetch_non_cash_benefits.php';
 
   static const String addInsuranceRelief = 'add_insurance_relief.php';
   static const String getInsuranceRelief = 'get_insurance_relief.php';
+
+  // New endpoint for adding company
+  static const String addCompany = 'add_company.php';
+  static const String getCompanies = 'get_companies.php';
+
+    // New leave management endpoints
+  static const String getLeaveBalance = 'get_leave_balance.php';
+  static const String requestLeave = 'request_leave.php';
+  static const String getLeaveRequests = 'get_leave_requests.php';
+  static const String updateLeaveStatus = 'update_leave_status.php';
+
+  // New endpoint for fetching P9 data
+  static const String getP9Data = 'get_p9_data.php';
 }
 
 /// Custom Exceptions
@@ -80,7 +90,7 @@ class ApiService {
     }
   }
 
-  /// Helper method for making HTTP POST requests
+   /// Helper method for making HTTP POST requests
   Future<Map<String, dynamic>> _postRequest(
       String endpoint, Map<String, dynamic> data) async {
     try {
@@ -166,7 +176,7 @@ class ApiService {
     }
   }
 
-  // Fetches non-cash benefits for an employee for a specific month and year.
+  /// Fetches non-cash benefits for an employee for a specific month and year.
   Future<List<Map<String, dynamic>>> fetchNonCashBenefits(
       String employeeId, int month, int year) async {
     final data = await _postRequest(ApiEndpoints.fetchNonCashBenefits, {
@@ -180,7 +190,6 @@ class ApiService {
       throw Exception('Failed to fetch non-cash benefits: ${data['message']}');
     }
   }
-  
 
   /// Fetches overtime amount for an employee for a specific month and year.
   Future<double> fetchOvertimeAmount(
@@ -435,7 +444,7 @@ class ApiService {
     }
   }
 
-   /// Adds a new insurance relief record to the backend
+  /// Adds a new insurance relief record to the backend
   Future<void> addInsuranceRelief(Map<String, dynamic> reliefData) async {
     final data =
         await _postRequest(ApiEndpoints.addInsuranceRelief, reliefData);
@@ -444,7 +453,7 @@ class ApiService {
     }
   }
 
-   /// Fetches insurance relief records from the backend
+  /// Fetches insurance relief records from the backend
   /// Can filter by employeeId, month, and year if provided
   Future<List<Map<String, dynamic>>> getInsuranceRelief({
     String? employeeId,
@@ -472,4 +481,86 @@ class ApiService {
       throw Exception('Failed to fetch insurance relief: ${data['message']}');
     }
   }
+
+  /// Adds a new company to the backend.
+  Future<bool> addCompany(Map<String, dynamic> companyData) async {
+    final data = await _postRequest(ApiEndpoints.addCompany, companyData);
+    if (data['status'] == 'success') {
+      return true;
+    } else {
+      throw Exception('Failed to add company: ${data['message']}');
+    }
+  }
+
+  /// Fetches the list of companies from the backend.
+  Future<List<Map<String, dynamic>>> getCompanies() async {
+    final data = await _getRequest(ApiEndpoints.getCompanies);
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['companies']);
+    } else {
+      throw Exception('Failed to fetch companies: ${data['message']}');
+    }
+  }
+
+  // New leave management methods
+  /// Fetches the leave balance for the authenticated user
+  Future<Map<String, dynamic>> getLeaveBalance() async {
+    final data = await _getRequest(ApiEndpoints.getLeaveBalance);
+    if (data['status'] == 'success') {
+      return data['balance']; // Expecting {'days_remaining': int}
+    } else {
+      throw Exception('Failed to fetch leave balance: ${data['message']}');
+    }
+  }
+
+  /// Submits a new leave request
+  Future<void> requestLeave(Map<String, dynamic> leaveData) async {
+    final data = await _postRequest(ApiEndpoints.requestLeave, leaveData);
+    if (data['status'] != 'success') {
+      throw Exception('Failed to submit leave request: ${data['message']}');
+    }
+  }
+
+  /// Fetches all leave requests (for admins) or user-specific requests
+  Future<List<Map<String, dynamic>>> getLeaveRequests() async {
+    final data = await _getRequest(ApiEndpoints.getLeaveRequests);
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['requests']);
+    } else {
+      throw Exception('Failed to fetch leave requests: ${data['message']}');
+    }
+  }
+
+  /// Updates the status of a leave request (e.g., Approved, Rejected)
+  Future<void> updateLeaveStatus(int requestId, String status) async {
+    final data = await _postRequest(
+      '${ApiEndpoints.updateLeaveStatus}?request_id=$requestId',
+      {'status': status},
+    );
+    if (data['status'] != 'success') {
+      throw Exception('Failed to update leave status: ${data['message']}');
+    }
+  }
+
+   /// Fetches P9 tax deduction data for a specific year.
+Future<List<Map<String, dynamic>>> fetchP9Data({
+    required String employeeId,
+    required int year,
+  }) async {
+    try {
+      final data = await _postRequest(ApiEndpoints.getP9Data, {
+        'employee_id': employeeId,
+        'year': year,
+      });
+      if (data['status'] == 'success') {
+        return List<Map<String, dynamic>>.from(data['p9_data']);
+      } else {
+        throw Exception('Failed to fetch P9 data: ${data['message']}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching P9 data: $e');
+    }
+  }
+
+
 }
