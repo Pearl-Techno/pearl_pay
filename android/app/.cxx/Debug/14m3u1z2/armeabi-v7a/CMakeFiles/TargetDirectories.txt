@@ -1,0 +1,2 @@
+C:/flutter projects/pearl_pay/android/app/.cxx/Debug/14m3u1z2/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/flutter projects/pearl_pay/android/app/.cxx/Debug/14m3u1z2/armeabi-v7a/CMakeFiles/rebuild_cache.dir

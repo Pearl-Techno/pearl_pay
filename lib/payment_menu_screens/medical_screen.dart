@@ -1,8 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../models/user.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
-class MedicalScreen extends StatelessWidget {
+class MedicalScreen extends StatefulWidget {
+  final User user;
+  final ApiService apiService;
+
+  const MedicalScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
+
+  @override
+  State<MedicalScreen> createState() => _MedicalScreenState();
+}
+
+class _MedicalScreenState extends State<MedicalScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(

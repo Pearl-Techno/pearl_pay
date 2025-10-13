@@ -1,27 +1,99 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../printables/p10_screen.dart';
 import '../printables/p9_screen.dart';
+import '../printables/payslip_screen.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
-import 'payslip_screen.dart';
+import 'login_screen.dart';
 import 'reports_screen.dart';
 
 class PrintablesScreen extends StatelessWidget {
-  const PrintablesScreen({super.key}); // Added constructor with key
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const PrintablesScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
+
+  // Logout function to clear SharedPreferences and navigate to LoginScreen
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Validate user data
+    if (user['company_id'] == null || user['role'] == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('User data is incomplete (missing company ID or role)')),
+        );
+      });
+    }
+
+    final isAdmin = user['role'] == 'admin';
+
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Printables',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          // Add your notification handling logic here
           print('Notifications tapped');
         },
         onProfileTap: () {
-          // Add your profile handling logic here
-          print('Profile tapped');
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.person, color: Colors.teal[700]),
+                    title: Text('Profile: ${user['username'] ?? 'Unknown'}'),
+                    subtitle: Text('Role: ${user['role'] ?? 'Unknown'}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout, color: Colors.red[700]),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _logout(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
       body: Container(
@@ -43,7 +115,7 @@ class PrintablesScreen extends StatelessWidget {
                     Text(
                       'Printable Options',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.teal[900],
                       ),
@@ -51,7 +123,7 @@ class PrintablesScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     // First row with 2 tiles
                     SizedBox(
-                      height: 110,
+                      height: 120,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -59,20 +131,26 @@ class PrintablesScreen extends StatelessWidget {
                             context,
                             icon: Icons.receipt_long,
                             title: 'Payslips',
-                            subtitle: 'Print payslips',
-                            destination: PayslipScreen(),
-                            backgroundColor: Colors.blue[50]!,
-                            iconColor: Colors.blue[500]!,
+                            subtitle: 'View and print payslips',
+                            destination: PayslipScreen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
                           ),
                           _buildMenuTile(
                             context,
                             icon: Icons.assignment,
                             title: 'P9 Forms',
-                            subtitle: 'Print P9 forms',
-                            destination: P9Screen(),
-                            backgroundColor: Colors.green[50]!,
-                            iconColor: Colors.green[500]!,
+                            subtitle: 'View and print P9 forms',
+                            destination: P9Screen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
                           ),
                         ],
@@ -81,7 +159,7 @@ class PrintablesScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     // Second row with 2 tiles
                     SizedBox(
-                      height: 110,
+                      height: 120,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -89,21 +167,29 @@ class PrintablesScreen extends StatelessWidget {
                             context,
                             icon: Icons.assignment,
                             title: 'P10 Forms',
-                            subtitle: 'Print P10 forms',
-                            destination: P10Screen(),
-                            backgroundColor: Colors.yellow[50]!,
-                            iconColor: Colors.yellow[700]!,
+                            subtitle: 'View and print P10 forms',
+                            destination: P10Screen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin,
                           ),
                           _buildMenuTile(
                             context,
                             icon: Icons.bar_chart,
-                            title: 'Other Reports',
-                            subtitle: 'Print reports',
-                            destination: ReportsScreen(),
-                            backgroundColor: Colors.orange[50]!,
-                            iconColor: Colors.orange[500]!,
+                            title: 'Reports',
+                            subtitle: 'View and print reports',
+                            destination: ReportsScreen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin,
                           ),
                         ],
                       ),
@@ -127,6 +213,7 @@ class PrintablesScreen extends StatelessWidget {
     required Color backgroundColor,
     required Color iconColor,
     required int tileCount,
+    bool enabled = true,
   }) {
     final screenWidth = MediaQuery.of(context).size.width;
     const horizontalPadding = 32.0; // 16 on each side
@@ -135,24 +222,34 @@ class PrintablesScreen extends StatelessWidget {
         (screenWidth - horizontalPadding - spacingBetweenTiles) / tileCount;
 
     return Card(
-      elevation: 6,
+      elevation: enabled ? 6 : 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      shadowColor: Colors.grey.withOpacity(0.3),
+      shadowColor: Colors.grey.withOpacity(enabled ? 0.3 : 0.1),
       child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => destination),
-          );
-        },
+        onTap: enabled
+            ? () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => destination),
+                );
+              }
+            : () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Access restricted to admins only')),
+                );
+              },
         borderRadius: BorderRadius.circular(12),
         child: Container(
           width: tileWidth,
-          height: 100,
+          height: 110,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.white, backgroundColor],
+              colors: [
+                enabled ? Colors.white : Colors.grey[200]!,
+                enabled ? backgroundColor : Colors.grey[300]!
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -161,25 +258,26 @@ class PrintablesScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 24, color: iconColor),
-              const SizedBox(height: 6),
+              Icon(icon,
+                  size: 28, color: enabled ? iconColor : Colors.grey[400]),
+              const SizedBox(height: 8),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.teal[900],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? Colors.teal[900] : Colors.grey[600],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[700],
+                  fontSize: 12,
+                  color: enabled ? Colors.grey[700] : Colors.grey[500],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),

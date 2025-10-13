@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:csv/csv.dart'; // Add this package to pubspec.yaml
+import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -12,18 +12,28 @@ import '../widgets/custom_app_bar.dart';
 class NSSFExport {
   final String title = 'NSSF Export';
   final IconData icon = Icons.security;
-  final ApiService _apiService = ApiService(client: http.Client());
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+  final int? companyId;
+
+  NSSFExport({
+    required this.user,
+    required this.apiService,
+    this.companyId,
+  });
 
   Widget buildCard(BuildContext context) {
     return Card(
-      elevation: 6, // Match HomeScreen
+      elevation: 6,
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         leading: Icon(icon, color: Colors.teal[700]),
-        title: Text(title,
-            style: TextStyle(
-                color: Colors.teal[900], fontWeight: FontWeight.w500)),
+        title: Text(
+          title,
+          style:
+              TextStyle(color: Colors.teal[900], fontWeight: FontWeight.w500),
+        ),
         trailing: Icon(Icons.file_download, color: Colors.teal[700]),
         onTap: () {
           Navigator.push(
@@ -36,14 +46,24 @@ class NSSFExport {
   }
 
   Widget buildDetailsPage(BuildContext context) {
-    return _NSSFExportDetailsPage(apiService: _apiService);
+    return _NSSFExportDetailsPage(
+      apiService: apiService,
+      user: user,
+      companyId: companyId,
+    );
   }
 }
 
 class _NSSFExportDetailsPage extends StatefulWidget {
   final ApiService apiService;
+  final Map<String, dynamic> user;
+  final int? companyId;
 
-  const _NSSFExportDetailsPage({required this.apiService});
+  const _NSSFExportDetailsPage({
+    required this.apiService,
+    required this.user,
+    this.companyId,
+  });
 
   @override
   _NSSFExportDetailsPageState createState() => _NSSFExportDetailsPageState();
@@ -52,45 +72,75 @@ class _NSSFExportDetailsPage extends StatefulWidget {
 class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _filteredEmployees = [];
-  List<String> _companyNames = ['All Companies'];
+  String? _companyName;
   bool _isLoading = true;
+  bool _isExporting = false;
+  String? _errorMessage;
   int selectedMonth = DateTime.now().month;
   int selectedYear = DateTime.now().year;
-  String? selectedCompany;
+  String searchKeyword = '';
 
   @override
   void initState() {
     super.initState();
+    final userCompanyId = widget.companyId ??
+        (widget.user['company_id'] != null
+            ? int.tryParse(widget.user['company_id'].toString())
+            : null);
+    if (userCompanyId == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Access denied: No company ID provided')),
+        );
+        Navigator.pop(context);
+      });
+      return;
+    }
     _fetchNSSFData();
   }
 
   Future<void> _fetchNSSFData() async {
-    setState(() => _isLoading = true);
-    try {
-      final employees = await widget.apiService.getEmployeeList();
-      final salaries = await widget.apiService.getSalaries();
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
-      final companyNames = ['All Companies'] +
-          employees
-              .map((e) => e['company_name'] as String?)
-              .where((name) => name != null && name.isNotEmpty)
-              .toSet()
-              .cast<String>()
-              .toList();
+    try {
+      final userCompanyId = widget.companyId ??
+          (widget.user['company_id'] != null
+              ? int.tryParse(widget.user['company_id'].toString())
+              : null);
+      final userCompanyName =
+          widget.user['company_name']?.toString() ?? 'Unknown';
+
+      if (userCompanyId == null) {
+        throw Exception('No company ID provided');
+      }
+
+      final companies = await widget.apiService.getCompanies();
+      final employees = await widget.apiService.getEmployeeList(userCompanyId);
+      final salaries = await widget.apiService.getSalaries(userCompanyId);
+
+      // Find the user's company in fetched companies
+      final userCompany = companies.firstWhere(
+        (c) => int.tryParse(c['id']?.toString() ?? '') == userCompanyId,
+        orElse: () => {
+          'id': userCompanyId.toString(),
+          'company_name': userCompanyName,
+        },
+      );
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         final matchesMonthYear = paymentDate != null &&
             paymentDate.month == selectedMonth &&
             paymentDate.year == selectedYear;
-        final matchesCompany = selectedCompany == null ||
-            selectedCompany == 'All Companies' ||
-            salary['company_name'] == selectedCompany;
         final hasNSSF =
             (double.tryParse(salary['nssf_deduction']?.toString() ?? '0.0') ??
                     0.0) >
                 0;
-        return matchesMonthYear && matchesCompany && hasNSSF;
+        return matchesMonthYear && hasNSSF;
       }).toList();
 
       final nssfEmployeeIds = filteredSalaries
@@ -98,7 +148,10 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
           .toSet();
 
       final filteredEmployees = employees.where((employee) {
-        return nssfEmployeeIds.contains(employee['employee_id'].toString());
+        final matchesSearch = searchKeyword.isEmpty ||
+            (employee['fullname'] ?? '').toLowerCase().contains(searchKeyword);
+        return nssfEmployeeIds.contains(employee['employee_id'].toString()) &&
+            matchesSearch;
       }).map((employee) {
         final salary = filteredSalaries.firstWhere(
           (s) =>
@@ -108,107 +161,146 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
         return {
           'employee_id': employee['employee_id'] ?? 'N/A',
           'fullname': employee['fullname'] ?? 'N/A',
-          'company_name': employee['company_name'] ?? 'N/A',
+          'company_id': userCompanyId,
+          'company_name':
+              userCompany['company_name']?.toString() ?? userCompanyName,
           'national_id': employee['national_id'] ?? 'N/A',
           'kra_pin': employee['kra_pin'] ?? 'N/A',
           'nssf_number': employee['nssf'] ?? 'N/A',
           'gross_pay': salary['gross_pay'] ?? '0.0',
+          'nssf_deduction': salary['nssf_deduction'] ?? '0.0',
         };
       }).toList();
 
       setState(() {
         _employees = employees;
         _filteredEmployees = filteredEmployees;
-        _companyNames = companyNames;
-        selectedCompany ??= 'All Companies';
+        _companyName =
+            userCompany['company_name']?.toString() ?? userCompanyName;
         _isLoading = false;
       });
+
+      if (kDebugMode) {
+        print(
+            'Fetched company: ${userCompany['company_name']} ($userCompanyId)');
+        print('Filtered employees: ${filteredEmployees.length}');
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load NSSF data: $e')),
-      );
+      setState(() {
+        _errorMessage = 'Failed to load NSSF data: $e';
+        _isLoading = false;
+      });
+      if (kDebugMode) {
+        print('Error fetching NSSF data: $e');
+      }
     }
   }
 
-  Future<void> _exportContributions() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Exporting NSSF Contributions as CSV...'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _exportSummary() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Exporting NSSF Summary as CSV...'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _exportToCSV() async {
+  Future<void> _exportToCSV(String exportType) async {
     if (_filteredEmployees.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No data available to export'),
-          duration: Duration(seconds: 2),
-        ),
+        const SnackBar(content: Text('No data available to export')),
       );
       return;
     }
 
-    try {
-      final List<List<dynamic>> rows = [
-        [
-          'Employee ID',
-          'Surname',
-          'Other Names',
-          'National ID',
-          'KRA PIN',
-          'NSSF Number',
-          'Gross Pay',
-          'Voluntary'
-        ],
-        ..._filteredEmployees.map((employee) {
-          final nameParts = _splitFullName(employee['fullname']);
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['employee_id'] ?? 'N/A',
-            nameParts['surname'],
-            nameParts['otherNames'],
-            employee['national_id'] ?? 'N/A',
-            employee['kra_pin'] ?? 'N/A',
-            employee['nssf_number'] ?? 'N/A',
-            numberFormat.format(
-                double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ??
-                    0.0),
-            0,
-          ];
-        }),
-      ];
+    setState(() => _isExporting = true);
 
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
+    try {
+      List<List<dynamic>> rows;
+      String fileName;
+
+      final numberFormat = NumberFormat('#,##0.00', 'en_US');
       final monthYear =
           DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/nssf_export_$monthYear.csv';
+
+      if (exportType == 'summary') {
+        final totalNSSF = _filteredEmployees.fold<double>(
+            0.0,
+            (sum, employee) =>
+                sum +
+                (double.tryParse(
+                        employee['nssf_deduction']?.toString() ?? '0.0') ??
+                    0.0));
+        final totalGrossPay = _filteredEmployees.fold<double>(
+            0.0,
+            (sum, employee) =>
+                sum +
+                (double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ??
+                    0.0));
+
+        rows = [
+          ['Total Employees', 'Total Gross Pay', 'Total NSSF Deduction'],
+          [
+            _filteredEmployees.length,
+            numberFormat.format(totalGrossPay),
+            numberFormat.format(totalNSSF),
+          ],
+        ];
+        fileName = 'nssf_summary_${monthYear}_company${widget.companyId}.csv';
+      } else {
+        rows = [
+          [
+            'Employee ID',
+            'Surname',
+            'Other Names',
+            'National ID',
+            'KRA PIN',
+            'NSSF Number',
+            if (exportType == 'full') 'Gross Pay',
+            'NSSF Deduction',
+            'Voluntary'
+          ],
+          ..._filteredEmployees.map((employee) {
+            final nameParts = _splitFullName(employee['fullname']);
+            return [
+              employee['employee_id'] ?? 'N/A',
+              nameParts['surname'],
+              nameParts['otherNames'],
+              employee['national_id'] ?? 'N/A',
+              employee['kra_pin'] ?? 'N/A',
+              employee['nssf_number'] ?? 'N/A',
+              if (exportType == 'full')
+                numberFormat.format(double.tryParse(
+                        employee['gross_pay']?.toString() ?? '0.0') ??
+                    0.0),
+              numberFormat.format(double.tryParse(
+                      employee['nssf_deduction']?.toString() ?? '0.0') ??
+                  0.0),
+              '0',
+            ];
+          }),
+        ];
+        fileName = exportType == 'contributions'
+            ? 'nssf_contributions_${monthYear}_company${widget.companyId}.csv'
+            : 'nssf_export_${monthYear}_company${widget.companyId}.csv';
+      }
+
+      final csv = const ListToCsvConverter().convert(rows);
+      final directory = await getTemporaryDirectory();
+      final filePath = '${directory.path}/$fileName';
       final file = File(filePath);
 
       await file.writeAsString(csv);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('NSSF data exported to $filePath'),
+          content: Text('Exported to $filePath'),
           backgroundColor: Colors.teal[700],
         ),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export to CSV: $e')),
+        SnackBar(
+          content: Text('Failed to export: $e'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _exportToCSV(exportType),
+          ),
+        ),
       );
+    } finally {
+      setState(() => _isExporting = false);
     }
   }
 
@@ -221,6 +313,17 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
       'surname': nameParts.last,
       'otherNames': nameParts.sublist(0, nameParts.length - 1).join(' '),
     };
+  }
+
+  void _filterEmployees(String keyword) {
+    setState(() {
+      searchKeyword = keyword.toLowerCase();
+      _filteredEmployees = _employees.where((employee) {
+        return (employee['fullname'] ?? '')
+            .toLowerCase()
+            .contains(searchKeyword);
+      }).toList();
+    });
   }
 
   Widget _buildDropdown<T>({
@@ -262,10 +365,14 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
         title: 'NSSF Export',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          print('Profile tapped');
+          if (kDebugMode) {
+            print('Profile tapped');
+          }
         },
       ),
       body: Container(
@@ -276,90 +383,142 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
             end: Alignment.bottomCenter,
           ),
         ),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Card(
-                      elevation: 6,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Container(
-                        padding: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.white, Colors.teal[50]!],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+        child: _isLoading
+            ? Center(child: CircularProgressIndicator(color: Colors.teal[700]))
+            : _errorMessage != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _errorMessage!,
+                          style:
+                              TextStyle(color: Colors.teal[900], fontSize: 16),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _fetchNSSFData,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal[700],
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          child: const Text('Retry'),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildDropdown(
-                              value: selectedMonth,
-                              items: List.generate(12, (index) => index + 1),
-                              itemBuilder: (month) => DateFormat('MMMM')
-                                  .format(DateTime(selectedYear, month)),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedMonth = value!;
-                                  _fetchNSSFData();
-                                });
-                              },
-                            ),
-                            _buildDropdown(
-                              value: selectedYear,
-                              items: List.generate(
-                                  10, (index) => DateTime.now().year - index),
-                              itemBuilder: (year) => year.toString(),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedYear = value!;
-                                  _fetchNSSFData();
-                                });
-                              },
-                            ),
-                            _buildDropdown(
-                              value: selectedCompany ?? 'All Companies',
-                              items: _companyNames,
-                              itemBuilder: (company) => company,
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedCompany = value;
-                                  _fetchNSSFData();
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-            SliverFillRemaining(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: _isLoading
-                    ? Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.teal[700]))
-                    : _filteredEmployees.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No NSSF data available for selected filters',
-                              style: TextStyle(
-                                  color: Colors.teal[900], fontSize: 16),
+                  )
+                : SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Card(
+                            elevation: 6,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Container(
+                              padding: const EdgeInsets.all(16.0),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white, Colors.teal[50]!],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Flexible(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            border: Border.all(
+                                                color: Colors.teal[200]!),
+                                          ),
+                                          child: Text(
+                                            _companyName ?? 'Unknown',
+                                            style: TextStyle(
+                                              color: Colors.teal[900],
+                                              fontSize: 14,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                      _buildDropdown(
+                                        value: selectedMonth,
+                                        items: List.generate(
+                                            12, (index) => index + 1),
+                                        itemBuilder: (month) =>
+                                            DateFormat('MMMM').format(
+                                                DateTime(selectedYear, month)),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            selectedMonth = value!;
+                                            _fetchNSSFData();
+                                          });
+                                        },
+                                      ),
+                                      _buildDropdown(
+                                        value: selectedYear,
+                                        items: List.generate(
+                                            10,
+                                            (index) =>
+                                                DateTime.now().year - index),
+                                        itemBuilder: (year) => year.toString(),
+                                        onChanged: (value) {
+                                          setState(() {
+                                            selectedYear = value!;
+                                            _fetchNSSFData();
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Search by Employee Name',
+                                      prefixIcon: Icon(Icons.search,
+                                          color: Colors.teal[700]),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[200]!)),
+                                      enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[200]!)),
+                                      focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[700]!)),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                    ),
+                                    onChanged: _filterEmployees,
+                                    style: TextStyle(color: Colors.grey[800]),
+                                  ),
+                                ],
+                              ),
                             ),
-                          )
-                        : Card(
+                          ),
+                          const SizedBox(height: 16),
+                          Card(
                             elevation: 6,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
@@ -372,156 +531,229 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
                                 ),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.vertical,
-                                  child: DataTable(
-                                    columnSpacing: 16,
-                                    dataRowHeight: 60,
-                                    headingRowColor: MaterialStateProperty.all(
-                                        Colors.teal[100]),
-                                    columns: const [
-                                      DataColumn(
-                                          label: Text('Employee ID',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Surname',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Other Names',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('National ID',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('KRA PIN',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('NSSF Number',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Gross Pay',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Voluntary',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                    ],
-                                    rows: _filteredEmployees.map((employee) {
-                                      final nameParts =
-                                          _splitFullName(employee['fullname']);
-                                      final numberFormat =
-                                          NumberFormat('#,##0.00', 'en_US');
-                                      return DataRow(
-                                        cells: [
-                                          DataCell(Text(
-                                              employee['employee_id']
-                                                      ?.toString() ??
-                                                  'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(nameParts['surname']!,
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              nameParts['otherNames']!,
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              employee['national_id'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              employee['kra_pin'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              employee['nssf_number'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              'KES ${numberFormat.format(double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ?? 0.0)}',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text('0',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                        ],
-                                      );
-                                    }).toList(),
+                              child: _filteredEmployees.isEmpty
+                                  ? Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Text(
+                                          'No NSSF data available for selected filters',
+                                          style: TextStyle(
+                                              color: Colors.teal[900],
+                                              fontSize: 16),
+                                        ),
+                                      ),
+                                    )
+                                  : SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.vertical,
+                                        child: DataTable(
+                                          columnSpacing: 16,
+                                          dataRowHeight: 60,
+                                          headingRowColor:
+                                              MaterialStateProperty.all(
+                                                  Colors.teal[100]),
+                                          columns: [
+                                            DataColumn(
+                                                label: Text('Employee ID',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('Surname',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('Other Names',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('National ID',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('KRA PIN',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('NSSF Number',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('Gross Pay',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                            DataColumn(
+                                                label: Text('NSSF Deduction',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color:
+                                                            Colors.teal[900]))),
+                                          ],
+                                          rows: _filteredEmployees
+                                              .map((employee) {
+                                            final nameParts = _splitFullName(
+                                                employee['fullname']);
+                                            final numberFormat = NumberFormat(
+                                                '#,##0.00', 'en_US');
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(Text(
+                                                    employee['employee_id']
+                                                            ?.toString() ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    nameParts['surname']!,
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    nameParts['otherNames']!,
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    employee['national_id'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    employee['kra_pin'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    employee['nssf_number'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    'KES ${numberFormat.format(double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ?? 0.0)}',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    'KES ${numberFormat.format(double.tryParse(employee['nssf_deduction']?.toString() ?? '0.0') ?? 0.0)}',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                              ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_filteredEmployees.isNotEmpty)
+                            Card(
+                              elevation: 6,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: Container(
+                                padding: const EdgeInsets.all(16.0),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [Colors.white, Colors.teal[50]!],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    ElevatedButton(
+                                      onPressed: _isExporting
+                                          ? null
+                                          : () => _exportToCSV('contributions'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.teal[700],
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 20, vertical: 15),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8)),
+                                      ),
+                                      child: _isExporting
+                                          ? const CircularProgressIndicator(
+                                              color: Colors.white)
+                                          : const Text('Export Contributions'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: _isExporting
+                                          ? null
+                                          : () => _exportToCSV('summary'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.teal[700],
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 20, vertical: 15),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8)),
+                                      ),
+                                      child: _isExporting
+                                          ? const CircularProgressIndicator(
+                                              color: Colors.white)
+                                          : const Text('Export Summary'),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: _isExporting
+                                          ? null
+                                          : () => _exportToCSV('full'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.teal[700],
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 20, vertical: 15),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8)),
+                                      ),
+                                      child: _isExporting
+                                          ? const CircularProgressIndicator(
+                                              color: Colors.white)
+                                          : const Text('Export to CSV'),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: _isLoading
-                    ? const SizedBox.shrink()
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            onPressed: _exportContributions,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export Contributions'),
-                          ),
-                          ElevatedButton(
-                            onPressed: _exportSummary,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export Summary'),
-                          ),
-                          ElevatedButton(
-                            onPressed: _exportToCSV,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export to CSV'),
-                          ),
                         ],
                       ),
-              ),
-            ),
-          ],
-        ),
+                    ),
+                  ),
       ),
     );
   }

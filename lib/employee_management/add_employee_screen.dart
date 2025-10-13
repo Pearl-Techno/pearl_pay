@@ -1,17 +1,23 @@
-import 'dart:convert'; // For utf8.decode
-import 'dart:io'; // For File handling on non-web platforms
+import 'dart:convert';
+import 'dart:io';
 
-import 'package:csv/csv.dart'; // For CSV parsing
+import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
 class AddEmployeeScreen extends StatefulWidget {
-  const AddEmployeeScreen({super.key});
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const AddEmployeeScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
 
   @override
   _AddEmployeeScreenState createState() => _AddEmployeeScreenState();
@@ -21,7 +27,8 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   final _formKey = GlobalKey<FormState>();
   final _employeeIdController = TextEditingController();
   final _fullnameController = TextEditingController();
-  String _selectedCompanyName = '';
+  int? _selectedCompanyId;
+  String? _selectedCompanyName;
   final _nationalIdController = TextEditingController();
   final _kraPinController = TextEditingController();
   final _positionController = TextEditingController();
@@ -41,9 +48,68 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   String _housingType = 'Benefit Not Given';
   bool _noHouseAllowance = false;
   bool _isLoading = false;
+  bool _isLoadingCompanies = true;
+  List<int> _companyIds = [];
+  Map<int, String> _companyIdToName = {};
+  List<Map<String, dynamic>> _failedAuditLogs = [];
 
-  final http.Client _httpClient = http.Client();
-  final ApiService apiService = ApiService(client: http.Client());
+  @override
+  void initState() {
+    super.initState();
+    _fetchCompanies();
+  }
+
+  Future<void> _fetchCompanies() async {
+    setState(() => _isLoadingCompanies = true);
+    try {
+      final companyId = widget.user['company_id'];
+      if (companyId == null || (companyId is! String && companyId is! int)) {
+        throw Exception('Invalid or missing user company ID');
+      }
+      final parsedCompanyId =
+          companyId is String ? int.tryParse(companyId) : companyId as int;
+      if (parsedCompanyId == null) {
+        throw Exception('Invalid user company ID format');
+      }
+      final userCompanyName =
+          widget.user['company_name']?.toString() ?? 'Unknown';
+
+      final companies = await widget.apiService.getCompanies();
+      final userCompany = companies.firstWhere(
+        (c) {
+          final id =
+              c['id'] is String ? int.tryParse(c['id']) : c['id'] as int?;
+          return id == parsedCompanyId;
+        },
+        orElse: () => {
+          'id': parsedCompanyId,
+          'company_name': userCompanyName,
+        },
+      );
+
+      setState(() {
+        _companyIds = [parsedCompanyId];
+        _companyIdToName = {
+          parsedCompanyId:
+              userCompany['company_name']?.toString() ?? userCompanyName
+        };
+        _selectedCompanyId = parsedCompanyId;
+        _selectedCompanyName =
+            _companyIdToName[parsedCompanyId] ?? userCompanyName;
+        _isLoadingCompanies = false;
+      });
+    } catch (e) {
+      setState(() {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_getFriendlyErrorMessage(e)),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+        _isLoadingCompanies = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -62,8 +128,17 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     _bankNameController.dispose();
     _bankBranchController.dispose();
     _accountNumberController.dispose();
-    _httpClient.close();
     super.dispose();
+  }
+
+  String _getFriendlyErrorMessage(dynamic error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('network')) {
+      return 'Network error. Please check your internet connection.';
+    } else if (message.contains('duplicate')) {
+      return 'Employee ID already exists.';
+    }
+    return 'An unexpected error occurred: $error';
   }
 
   void _calculateGrossPay(String value) {
@@ -77,13 +152,49 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     });
   }
 
+  void _resetForm() {
+    _formKey.currentState?.reset();
+    _employeeIdController.clear();
+    _fullnameController.clear();
+    _nationalIdController.clear();
+    _kraPinController.clear();
+    _nssfController.clear();
+    _nhifController.clear();
+    _emailController.clear();
+    _telController.clear();
+    _basicController.clear();
+    _houseAllowanceController.text = '0.00';
+    _grossPayController.clear();
+    _bankNameController.clear();
+    _bankBranchController.clear();
+    _accountNumberController.clear();
+    setState(() {
+      _noHouseAllowance = false;
+      _residentialStatus = 'Resident';
+      _employeeType = 'Primary Employee';
+      _housingType = 'Benefit Not Given';
+      _positionController.clear();
+    });
+  }
+
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
+      if (_selectedCompanyId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Please select a company'),
+            backgroundColor: Colors.red[700],
+          ),
+        );
+        return;
+      }
+
       setState(() => _isLoading = true);
 
       final employeeData = {
         'employee_id': _employeeIdController.text,
         'fullname': _fullnameController.text,
+        'company_id': _selectedCompanyId,
         'company_name': _selectedCompanyName,
         'national_id': _nationalIdController.text,
         'kra_pin': _kraPinController.text,
@@ -101,24 +212,47 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         'bank_name': _bankNameController.text,
         'bank_branch': _bankBranchController.text,
         'account_number': _accountNumberController.text,
+        'added_by': widget.user['user_id'].toString(),
       };
 
       try {
-        await apiService.addEmployee(employeeData);
+        await widget.apiService.addEmployee(employeeData, _selectedCompanyId!);
+
+        try {
+          await widget.apiService.logEmployeeAction({
+            'user_id': widget.user['user_id'],
+            'employee_name': _fullnameController.text,
+            'action': 'add',
+          });
+        } catch (e) {
+          _failedAuditLogs.add({
+            'user_id': widget.user['user_id'],
+            'employee_name': _fullnameController.text,
+            'action': 'add',
+            'error': e.toString(),
+          });
+          if (kDebugMode) {
+            print('Failed to log employee action: $e');
+          }
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Employee Added: ${employeeData['fullname']}'),
             backgroundColor: Colors.teal[700],
           ),
         );
-        _formKey.currentState!.reset();
-        setState(() => _selectedCompanyName = '');
+
+        _resetForm();
       } catch (e) {
         if (kDebugMode) {
           print('Error adding employee: $e');
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to add employee: $e')),
+          SnackBar(
+            content: Text(_getFriendlyErrorMessage(e)),
+            backgroundColor: Colors.red[700],
+          ),
         );
       } finally {
         setState(() => _isLoading = false);
@@ -126,7 +260,8 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     }
   }
 
- Future<void> _pickFile() async {
+  Future<void> _pickFile() async {
+    setState(() => _isLoading = true);
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -135,9 +270,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       );
 
       if (result == null || result.files.isEmpty) {
-        if (kDebugMode) {
-          print('No file selected');
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No file selected')),
         );
@@ -153,9 +285,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         final fileOnDevice = File(file.path!);
         bytes = await fileOnDevice.readAsBytes();
       } else {
-        if (kDebugMode) {
-          print('Failed to load file: No bytes or path available');
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('Failed to load file: No bytes or path available')),
@@ -164,32 +293,17 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       }
 
       if (bytes == null) {
-        if (kDebugMode) {
-          print('Failed to load file content');
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to load file content')),
         );
         return;
       }
 
-      final csvString =
-          utf8.decode(bytes).trim(); // Remove leading/trailing whitespace
-      if (kDebugMode) {
-        print('CSV Content:\n$csvString');
-      }
-
-      // Parse the entire CSV string at once
+      final csvString = utf8.decode(bytes).trim();
       final List<List<dynamic>> csvData =
           const CsvToListConverter().convert(csvString);
-      if (kDebugMode) {
-        print('Parsed CSV Data: $csvData');
-      }
 
       if (csvData.isEmpty || csvData.length < 2) {
-        if (kDebugMode) {
-          print('CSV file is empty or has no data rows');
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('CSV file is empty or invalid')),
         );
@@ -198,37 +312,34 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
 
       final headers =
           csvData[0].map((h) => h.toString().toLowerCase()).toList();
-      if (kDebugMode) {
-        print('Parsed Headers: $headers');
+      final requiredHeaders = ['employee_id', 'fullname', 'basic', 'gross_pay'];
+      if (!requiredHeaders.every((h) => headers.contains(h))) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('CSV missing required headers: $requiredHeaders')),
+        );
+        return;
       }
+
       final List<Map<String, dynamic>> employees = [];
       List<String> invalidRows = [];
 
       for (int i = 1; i < csvData.length; i++) {
         final row = csvData[i];
-        if (row.isNotEmpty) {
+        if (row.length >= headers.length) {
           final employee = _parseCsvRow(row, headers, i);
           if (employee['isValid']) {
             employees.add(employee);
           } else {
             invalidRows.add(employee['error']);
           }
-        }
-      }
-
-      if (invalidRows.isNotEmpty) {
-        if (kDebugMode) {
-          print('Invalid rows detected:');
-          for (var error in invalidRows) {
-            print(error);
-          }
+        } else {
+          invalidRows.add(
+              'Row $i: Incomplete data (expected ${headers.length} columns, found ${row.length})');
         }
       }
 
       if (employees.isEmpty) {
-        if (kDebugMode) {
-          print('No valid employees found in the file');
-        }
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No valid employees found in the file')),
         );
@@ -237,22 +348,24 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
 
       _showPreviewDialog(employees, invalidRows);
     } catch (e) {
-      if (kDebugMode) {
-        print('Error uploading file: $e');
-      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error uploading file: $e')),
+        SnackBar(
+          content: Text(_getFriendlyErrorMessage(e)),
+          backgroundColor: Colors.red[700],
+        ),
       );
     } finally {
       setState(() => _isLoading = false);
     }
   }
+
   Map<String, dynamic> _parseCsvRow(
       List<dynamic> row, List<String> headers, int rowIndex) {
     final employee = <String, dynamic>{
       'employee_id': '',
       'fullname': '',
-      'company_name': '',
+      'company_id': _selectedCompanyId ?? widget.user['company_id'],
+      'company_name': _selectedCompanyName ?? widget.user['company_name'],
       'national_id': '',
       'kra_pin': '',
       'position': '',
@@ -269,11 +382,14 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       'bank_name': '',
       'bank_branch': '',
       'account_number': '',
+      'added_by': widget.user['user_id'].toString(),
     };
 
     for (int j = 0; j < headers.length && j < row.length; j++) {
       final value = row[j]?.toString() ?? '';
-      employee[headers[j]] = value;
+      if (headers[j] != 'company_name' && headers[j] != 'company_id') {
+        employee[headers[j]] = value;
+      }
     }
 
     if (employee['employee_id'].isEmpty) {
@@ -281,9 +397,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     }
     if (employee['fullname'].isEmpty) {
       return {'isValid': false, 'error': 'Row $rowIndex: Missing Full Name'};
-    }
-    if (employee['company_name'].isEmpty) {
-      return {'isValid': false, 'error': 'Row $rowIndex: Missing Company Name'};
     }
     if (employee['basic'].isEmpty ||
         double.tryParse(employee['basic']) == null) {
@@ -305,6 +418,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         ? 0.0
         : (double.tryParse(employee['house_allowance']) ?? (basicValue * 0.15));
     employee['house_allowance'] = houseAllowance.toStringAsFixed(2);
+    employee['gross_pay'] = (basicValue + houseAllowance).toStringAsFixed(2);
 
     return {'isValid': true, 'error': '', ...employee};
   }
@@ -401,10 +515,11 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
               _submitBulkEmployees(employees);
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal[700],
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8))),
+              backgroundColor: Colors.teal[700],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
             child: const Text('Upload'),
           ),
         ],
@@ -412,25 +527,80 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     );
   }
 
+  Stream<int> _processEmployees(List<Map<String, dynamic>> employees) async* {
+    for (int i = 0; i < employees.length; i++) {
+      yield i + 1;
+      final employee = employees[i];
+      try {
+        final companyId = employee['company_id'] as int;
+        await widget.apiService.addEmployee(employee, companyId);
+
+        try {
+          await widget.apiService.logEmployeeAction({
+            'user_id': widget.user['user_id'],
+            'employee_name': employee['fullname'],
+            'action': 'add',
+          });
+        } catch (e) {
+          _failedAuditLogs.add({
+            'user_id': widget.user['user_id'],
+            'employee_name': employee['fullname'],
+            'action': 'add',
+            'error': e.toString(),
+          });
+          if (kDebugMode) {
+            print('Failed to log employee action: $e');
+          }
+        }
+      } catch (e) {
+        throw e; // Let the caller handle the error
+      }
+    }
+  }
+
   Future<void> _submitBulkEmployees(
       List<Map<String, dynamic>> employees) async {
     setState(() => _isLoading = true);
-
     int successCount = 0;
     List<String> failedEmployees = [];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        content: StreamBuilder<int>(
+          stream: _processEmployees(employees),
+          builder: (context, snapshot) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Colors.teal[700]),
+                const SizedBox(height: 16),
+                Text(
+                    'Processing ${snapshot.data ?? 0}/${employees.length} employees'),
+              ],
+            );
+          },
+        ),
+      ),
+    );
 
     try {
       for (final employee in employees) {
         try {
-          await apiService.addEmployee(employee);
+          final companyId = employee['company_id'] as int;
+          await widget.apiService.addEmployee(employee, companyId);
           successCount++;
         } catch (e) {
-          failedEmployees.add('${employee['fullname']} - $e');
+          failedEmployees
+              .add('${employee['fullname']} - ${_getFriendlyErrorMessage(e)}');
           if (kDebugMode) {
             print('Failed to add ${employee['fullname']}: $e');
           }
         }
       }
+
+      Navigator.pop(context); // Close progress dialog
 
       if (successCount > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -442,12 +612,6 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       }
 
       if (failedEmployees.isNotEmpty) {
-        if (kDebugMode) {
-          print('Failed employees:');
-          for (var error in failedEmployees) {
-            print(error);
-          }
-        }
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
@@ -475,14 +639,46 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
         );
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Failed to add employees: $e');
-      }
+      Navigator.pop(context); // Close progress dialog
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add employees: $e')),
+        SnackBar(
+          content: Text(_getFriendlyErrorMessage(e)),
+          backgroundColor: Colors.red[700],
+        ),
       );
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _downloadCsvTemplate() async {
+    final template =
+        '''employee_id,fullname,national_id,kra_pin,position,nssf,nhif,email,tel,basic,house_allowance,gross_pay,residential_status,employee_type,housing_type,bank_name,bank_branch,account_number
+E001,John Doe,12345678,ABC123,Manager,NS123,NH123,john@example.com,1234567890,50000.00,7500.00,57500.00,Resident,Primary Employee,Benefit Given,Bank ABC,Main Branch,123456789''';
+    try {
+      final bytes = utf8.encode(template);
+      final result = await FilePicker.platform.saveFile(
+        fileName: 'employee_template.csv',
+        bytes: bytes,
+        type: FileType.custom,
+        allowedExtensions: ['csv'],
+      );
+      if (result != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV template downloaded to $result')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Template download cancelled')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_getFriendlyErrorMessage(e)),
+          backgroundColor: Colors.red[700],
+        ),
+      );
     }
   }
 
@@ -506,89 +702,130 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
             Text(
               title,
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.teal[900],
-              ),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.teal[900]),
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 16.0,
-              runSpacing: 16.0,
-              children: fields,
-            ),
+            Wrap(spacing: 16.0, runSpacing: 16.0, children: fields),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label,
-      {bool isNumber = false,
-      bool enabled = true,
-      void Function(String)? onChanged}) {
+  String? _validateEmail(String? value) {
+    if (value == null || value.isEmpty) return null; // Optional field
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(value)) {
+      return 'Please enter a valid email';
+    }
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    if (value == null || value.isEmpty) return null; // Optional field
+    final phoneRegex = RegExp(r'^\+?\d{10,12}$');
+    if (!phoneRegex.hasMatch(value)) {
+      return 'Please enter a valid phone number (10-12 digits)';
+    }
+    return null;
+  }
+
+  String? _validateKraPin(String? value) {
+    if (value == null || value.isEmpty) return null; // Optional field
+    final kraPinRegex = RegExp(r'^[A-Za-z0-9]{10,11}$');
+    if (!kraPinRegex.hasMatch(value)) {
+      return 'Please enter a valid KRA PIN (10-11 alphanumeric characters)';
+    }
+    return null;
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label, {
+    bool isNumber = false,
+    bool enabled = true,
+    String? Function(String?)? validator,
+    void Function(String)? onChanged,
+  }) {
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.45,
       child: TextFormField(
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: Colors.teal[900]),
+          labelStyle: TextStyle(fontSize: 14, color: Colors.teal[900]),
           border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[200]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
           enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[200]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
           focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[700]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[700]!),
+          ),
           filled: true,
           fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-        validator: (value) {
-          if ((label == 'Employee ID' ||
-                  label == 'Full Name' ||
-                  label == 'Basic Salary' ||
-                  label == 'Gross Pay') &&
-              (value == null || value.isEmpty)) {
-            return 'Please enter $label';
-          }
-          if ((label == 'Basic Salary' || label == 'Gross Pay') &&
-              value != null &&
-              double.tryParse(value) == null) {
-            return 'Please enter a valid number for $label';
-          }
-          return null;
-        },
+        validator: validator ??
+            (value) {
+              if ((label == 'Employee ID' ||
+                      label == 'Full Name' ||
+                      label == 'Basic Salary' ||
+                      label == 'Gross Pay') &&
+                  (value == null || value.isEmpty)) {
+                return 'Please enter $label';
+              }
+              if ((label == 'Basic Salary' || label == 'Gross Pay') &&
+                  value != null &&
+                  double.tryParse(value) == null) {
+                return 'Please enter a valid number for $label';
+              }
+              return null;
+            },
         enabled: enabled,
         onChanged: onChanged,
-        style: TextStyle(color: Colors.grey[800]),
+        style: TextStyle(fontSize: 14, color: Colors.grey[800]),
       ),
     );
   }
 
-  Widget _buildDropdownField(String label, List<String> items,
-      String selectedItem, ValueChanged<String?> onChanged) {
+  Widget _buildDropdownField(
+    String label,
+    List<String> items,
+    String selectedItem,
+    ValueChanged<String?> onChanged,
+  ) {
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.45,
       child: DropdownButtonFormField<String>(
         value: selectedItem.isNotEmpty ? selectedItem : null,
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: TextStyle(color: Colors.teal[900]),
+          labelStyle: TextStyle(fontSize: 14, color: Colors.teal[900]),
           border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[200]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
           enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[200]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
           focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.teal[700]!)),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[700]!),
+          ),
           filled: true,
           fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         items: items
             .map((item) => DropdownMenuItem(
@@ -609,9 +846,47 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     );
   }
 
-  Widget _buildActionButton(String label, VoidCallback onPressed) {
+  Widget _buildCompanyField() {
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.45,
+      child: TextFormField(
+        initialValue:
+            _selectedCompanyName ?? widget.user['company_name'] ?? 'Unknown',
+        decoration: InputDecoration(
+          labelText: 'Company Name',
+          labelStyle: TextStyle(fontSize: 14, color: Colors.teal[900]),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[200]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: Colors.teal[700]!),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        enabled: false,
+        style: TextStyle(fontSize: 14, color: Colors.grey[800]),
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            return 'Company name is required';
+          }
+          return null;
+        },
+      ),
+    );
+  }
+
+  Widget _buildActionButton(String label, VoidCallback onPressed) {
+    return SizedBox(
+      width: MediaQuery.of(context).size.width * 0.3,
       child: ElevatedButton(
         onPressed: _isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
@@ -632,10 +907,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
       label: Text(
         label,
         style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: Colors.teal[900],
-          fontSize: 14,
-        ),
+            fontWeight: FontWeight.w600, color: Colors.teal[900], fontSize: 14),
       ),
     );
   }
@@ -644,10 +916,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
     return DataCell(
       Text(
         text,
-        style: TextStyle(
-          color: Colors.grey[800],
-          fontSize: 12,
-        ),
+        style: TextStyle(color: Colors.grey[800], fontSize: 12),
       ),
     );
   }
@@ -656,7 +925,7 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Add Employee',
+        title: 'Add Employee - ${widget.user['company_name']}',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
           print('Notifications tapped');
@@ -673,189 +942,202 @@ class _AddEmployeeScreenState extends State<AddEmployeeScreen> {
             end: Alignment.bottomCenter,
           ),
         ),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTile(
-                        'Personal Information',
-                        [
-                          _buildTextField(_employeeIdController, 'Employee ID'),
-                          _buildTextField(_fullnameController, 'Full Name'),
-                          FutureBuilder<List<String>>(
-                            future: apiService.getCompanies().then(
-                                (companies) => companies
-                                    .map((company) =>
-                                        company['company_name'].toString())
-                                    .toSet()
-                                    .toList()),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return Center(
-                                    child: CircularProgressIndicator(
-                                        color: Colors.teal[700]));
-                              } else if (snapshot.hasError) {
-                                return Text('Error: ${snapshot.error}',
-                                    style: TextStyle(color: Colors.red[700]));
-                              } else {
-                                final companies = snapshot.data ?? [];
-                                if (companies.isEmpty) {
-                                  return Text('No companies available',
-                                      style:
-                                          TextStyle(color: Colors.teal[900]));
-                                }
-                                if (_selectedCompanyName.isEmpty) {
-                                  _selectedCompanyName = companies.first;
-                                }
-                                return _buildDropdownField(
-                                  'Company Name',
-                                  companies,
-                                  _selectedCompanyName,
+        child: _isLoadingCompanies
+            ? Center(child: CircularProgressIndicator(color: Colors.teal[700]))
+            : CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              children: [
+                                _buildActionButton(
+                                    'Download Template', _downloadCsvTemplate),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            _buildSectionTile(
+                              'Personal Information',
+                              [
+                                _buildTextField(
+                                    _employeeIdController, 'Employee ID'),
+                                _buildTextField(
+                                    _fullnameController, 'Full Name'),
+                                _buildCompanyField(),
+                                _buildTextField(
+                                    _nationalIdController, 'National ID'),
+                                _buildTextField(_kraPinController, 'KRA PIN',
+                                    validator: _validateKraPin),
+                                _buildTextField(_nssfController, 'NSSF Number'),
+                                _buildTextField(_nhifController, 'NHIF Number'),
+                                FutureBuilder<List<Map<String, dynamic>>>(
+                                  future: widget.apiService.getPositions(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return Center(
+                                          child: CircularProgressIndicator(
+                                              color: Colors.teal[700]));
+                                    } else if (snapshot.hasError) {
+                                      return Text('Error: ${snapshot.error}',
+                                          style: TextStyle(
+                                              color: Colors.red[700]));
+                                    } else {
+                                      final positions = snapshot.data ?? [];
+                                      if (positions.isEmpty) {
+                                        return Column(
+                                          children: [
+                                            Text('No positions available',
+                                                style: TextStyle(
+                                                    color: Colors.teal[900])),
+                                            TextButton(
+                                              onPressed: () =>
+                                                  Navigator.pushNamed(
+                                                      context, '/add_position'),
+                                              child: Text('Add a Position',
+                                                  style: TextStyle(
+                                                      color: Colors.teal[700])),
+                                            ),
+                                          ],
+                                        );
+                                      }
+                                      final positionDescriptions = positions
+                                          .map((p) =>
+                                              p['description']?.toString() ??
+                                              '')
+                                          .where((desc) => desc.isNotEmpty)
+                                          .toSet()
+                                          .toList();
+                                      if (positionDescriptions.isEmpty) {
+                                        return Text(
+                                            'No valid positions available',
+                                            style: TextStyle(
+                                                color: Colors.teal[900]));
+                                      }
+                                      if (!_positionController
+                                              .text.isNotEmpty ||
+                                          !positionDescriptions.contains(
+                                              _positionController.text)) {
+                                        _positionController.text =
+                                            positionDescriptions.first;
+                                      }
+                                      return _buildDropdownField(
+                                        'Position',
+                                        positionDescriptions,
+                                        _positionController.text,
+                                        (value) => setState(() =>
+                                            _positionController.text = value!),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildSectionTile(
+                              'Contact Information',
+                              [
+                                _buildTextField(_emailController, 'Email',
+                                    validator: _validateEmail),
+                                _buildTextField(_telController, 'Tel',
+                                    validator: _validatePhone),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildSectionTile(
+                              'Salary Information',
+                              [
+                                _buildTextField(
+                                    _basicController, 'Basic Salary',
+                                    isNumber: true,
+                                    onChanged: _calculateGrossPay),
+                                Row(
+                                  children: [
+                                    Checkbox(
+                                      value: _noHouseAllowance,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          _noHouseAllowance = value!;
+                                          _calculateGrossPay(
+                                              _basicController.text);
+                                        });
+                                      },
+                                      activeColor: Colors.teal[700],
+                                    ),
+                                    Text('No House Allowance',
+                                        style:
+                                            TextStyle(color: Colors.teal[900])),
+                                  ],
+                                ),
+                                _buildTextField(_houseAllowanceController,
+                                    'House Allowance',
+                                    isNumber: true, enabled: false),
+                                _buildTextField(
+                                    _grossPayController, 'Gross Pay',
+                                    isNumber: true, enabled: false),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildSectionTile(
+                              'Additional Information',
+                              [
+                                _buildDropdownField(
+                                  'Residential Status',
+                                  ['Resident', 'Non-resident'],
+                                  _residentialStatus,
                                   (value) => setState(
-                                      () => _selectedCompanyName = value!),
-                                );
-                              }
-                            },
-                          ),
-                          _buildTextField(_nationalIdController, 'National ID'),
-                          _buildTextField(_kraPinController, 'KRA PIN'),
-                          _buildTextField(_nssfController, 'NSSF Number'),
-                          _buildTextField(_nhifController, 'NHIF Number'),
-                          FutureBuilder<List<String>>(
-                            future: apiService.getPositions().then(
-                                (positions) => positions
-                                    .map((position) =>
-                                        position['description'].toString())
-                                    .toSet()
-                                    .toList()),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return Center(
-                                    child: CircularProgressIndicator(
-                                        color: Colors.teal[700]));
-                              } else if (snapshot.hasError) {
-                                return Text('Error: ${snapshot.error}',
-                                    style: TextStyle(color: Colors.red[700]));
-                              } else {
-                                final positions = snapshot.data ?? [];
-                                if (positions.isEmpty) {
-                                  return Text('No positions available',
-                                      style:
-                                          TextStyle(color: Colors.teal[900]));
-                                }
-                                if (!_positionController.text.isNotEmpty ||
-                                    !positions
-                                        .contains(_positionController.text)) {
-                                  _positionController.text = positions.first;
-                                }
-                                return _buildDropdownField(
-                                  'Position',
-                                  positions,
-                                  _positionController.text,
-                                  (value) => setState(
-                                      () => _positionController.text = value!),
-                                );
-                              }
-                            },
-                          ),
-                        ],
+                                      () => _residentialStatus = value!),
+                                ),
+                                _buildDropdownField(
+                                  'Employee Type',
+                                  ['Primary Employee', 'Secondary Employee'],
+                                  _employeeType,
+                                  (value) =>
+                                      setState(() => _employeeType = value!),
+                                ),
+                                _buildDropdownField(
+                                  'Housing Type',
+                                  ['Benefit Given', 'Benefit Not Given'],
+                                  _housingType,
+                                  (value) =>
+                                      setState(() => _housingType = value!),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildSectionTile(
+                              'Bank Information',
+                              [
+                                _buildTextField(
+                                    _bankNameController, 'Bank Name'),
+                                _buildTextField(
+                                    _bankBranchController, 'Bank Branch'),
+                                _buildTextField(
+                                    _accountNumberController, 'Account Number'),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _buildActionButton('Add Employee', _submitForm),
+                                _buildActionButton('Upload CSV', _pickFile),
+                              ],
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      _buildSectionTile(
-                        'Contact Information',
-                        [
-                          _buildTextField(_emailController, 'Email'),
-                          _buildTextField(_telController, 'Tel'),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSectionTile(
-                        'Salary Information',
-                        [
-                          _buildTextField(_basicController, 'Basic Salary',
-                              isNumber: true, onChanged: _calculateGrossPay),
-                          Row(
-                            children: [
-                              Checkbox(
-                                value: _noHouseAllowance,
-                                onChanged: (value) {
-                                  setState(() {
-                                    _noHouseAllowance = value!;
-                                    _calculateGrossPay(_basicController.text);
-                                  });
-                                },
-                                activeColor: Colors.teal[700],
-                              ),
-                              Text('No House Allowance',
-                                  style: TextStyle(color: Colors.teal[900])),
-                            ],
-                          ),
-                          _buildTextField(
-                              _houseAllowanceController, 'House Allowance',
-                              isNumber: true, enabled: false),
-                          _buildTextField(_grossPayController, 'Gross Pay',
-                              isNumber: true, enabled: false),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSectionTile(
-                        'Additional Information',
-                        [
-                          _buildDropdownField(
-                            'Residential Status',
-                            ['Resident', 'Non-resident'],
-                            _residentialStatus,
-                            (value) =>
-                                setState(() => _residentialStatus = value!),
-                          ),
-                          _buildDropdownField(
-                            'Employee Type',
-                            ['Primary Employee', 'Secondary Employee'],
-                            _employeeType,
-                            (value) => setState(() => _employeeType = value!),
-                          ),
-                          _buildDropdownField(
-                            'Housing Type',
-                            ['Benefit Given', 'Benefit Not Given'],
-                            _housingType,
-                            (value) => setState(() => _housingType = value!),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildSectionTile(
-                        'Bank Information',
-                        [
-                          _buildTextField(_bankNameController, 'Bank Name'),
-                          _buildTextField(_bankBranchController, 'Bank Branch'),
-                          _buildTextField(
-                              _accountNumberController, 'Account Number'),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildActionButton('Add Employee', _submitForm),
-                          _buildActionButton('Upload CSV', _pickFile),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }

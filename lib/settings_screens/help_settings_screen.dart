@@ -1,71 +1,126 @@
-import 'dart:io' show Platform; // Add this for platform detection
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../help_support/contact_support_screen.dart';
+import '../help_support/send_feedback_screen.dart';
+import '../screens/login_screen.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
-class HelpSettingsScreen extends StatelessWidget {
-  const HelpSettingsScreen({super.key});
 
-  // Function to launch email
-  Future<void> _launchEmail(String email, BuildContext context) async {
+class HelpSettingsScreen extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const HelpSettingsScreen({
+    Key? key,
+    required this.user,
+    required this.apiService,
+  }) : super(key: key);
+
+  @override
+  _HelpSettingsScreenState createState() => _HelpSettingsScreenState();
+}
+
+class _HelpSettingsScreenState extends State<HelpSettingsScreen> {
+  bool _isLoading = false;
+
+  // Launch email
+  Future<void> _launchEmail(String email) async {
     final Uri emailUri = Uri(
       scheme: 'mailto',
       path: email,
       queryParameters: {'subject': 'Support Request'},
     );
-    try {
-      if (await canLaunchUrl(emailUri)) {
-        await launchUrl(emailUri);
-      } else {
-        _showErrorSnackBar(context, 'Could not launch email client');
-      }
-    } catch (e) {
-      _showErrorSnackBar(context, 'Error launching email: $e');
-    }
+    await _launchUrl(emailUri, 'email client');
   }
 
-  // Function to launch phone (mobile only)
-  Future<void> _launchPhone(String phone, BuildContext context) async {
+  // Launch phone (mobile only)
+  Future<void> _launchPhone(String phone) async {
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      _showErrorSnackBar(context, 'Phone calls are not supported on desktop');
+      _showErrorSnackBar('Phone calls are not supported on desktop');
       return;
     }
     final Uri phoneUri = Uri(scheme: 'tel', path: phone);
-    try {
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-      } else {
-        _showErrorSnackBar(context, 'Could not launch phone dialer');
-      }
-    } catch (e) {
-      _showErrorSnackBar(context, 'Error launching phone: $e');
-    }
+    await _launchUrl(phoneUri, 'phone dialer');
   }
 
-  // Function to launch WhatsApp
-  Future<void> _launchWhatsApp(String phone, BuildContext context) async {
+  // Launch WhatsApp
+  Future<void> _launchWhatsApp(String phone) async {
     final Uri whatsappUri = Uri.parse('https://wa.me/$phone');
+    await _launchUrl(whatsappUri, 'WhatsApp', mode: LaunchMode.externalApplication);
+  }
+
+  // Generic URL launcher with error handling
+  Future<void> _launchUrl(Uri uri, String app, {LaunchMode mode = LaunchMode.platformDefault}) async {
+    setState(() => _isLoading = true);
     try {
-      if (await canLaunchUrl(whatsappUri)) {
-        await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: mode);
       } else {
-        _showErrorSnackBar(context, 'Could not launch WhatsApp');
+        throw 'Could not launch $app';
       }
     } catch (e) {
-      _showErrorSnackBar(context, 'Error launching WhatsApp: $e');
+      _showErrorSnackBar('Error launching $app: $e');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  // Helper function to show error SnackBar
-  void _showErrorSnackBar(BuildContext context, String message) {
+  // Show error SnackBar with retry option
+  void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red,
+        backgroundColor: Colors.red[700],
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: () {
+            // Retry logic depends on context; placeholder for now
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Retry action triggered'),
+                backgroundColor: Colors.teal[700],
+              ),
+            );
+          },
+        ),
       ),
     );
+  }
+
+  // Logout function
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
   }
 
   @override
@@ -78,7 +133,30 @@ class HelpSettingsScreen extends StatelessWidget {
           print('Notifications tapped');
         },
         onProfileTap: () {
-          print('Profile tapped');
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.person, color: Colors.teal[700]),
+                    title: Text('Profile: ${widget.user['username'] ?? 'Unknown'}'),
+                    subtitle: Text('Role: ${widget.user['role'] ?? 'Unknown'}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout, color: Colors.red[700]),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _logout(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
       body: Container(
@@ -90,7 +168,7 @@ class HelpSettingsScreen extends StatelessWidget {
           ),
         ),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(20.0),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,16 +176,17 @@ class HelpSettingsScreen extends StatelessWidget {
                 Text(
                   'Get Support',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
                     color: Colors.teal[900],
                   ),
                 ),
                 const SizedBox(height: 16),
                 Card(
-                  elevation: 4,
+                  elevation: 6,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -117,101 +196,57 @@ class HelpSettingsScreen extends StatelessWidget {
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Contact Details',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.teal[900],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Icon(Icons.person,
-                                color: Colors.teal[700], size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Developer/Support: Wesonga Mukoya',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[800],
-                              ),
+                    padding: const EdgeInsets.all(20.0),
+                    child: _isLoading
+                        ? Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.teal[700],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () => _launchPhone('+254788330998', context),
-                          child: Row(
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.phone,
-                                  color: Colors.teal[700], size: 20),
-                              const SizedBox(width: 8),
                               Text(
-                                'Call: +254 788330998',
+                                'Contact Details',
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.teal[700],
-                                  decoration: TextDecoration.underline,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.teal[900],
                                 ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildContactRow(
+                                icon: Icons.person,
+                                text: 'Developer/Support: Wesonga Mukoya',
+                              ),
+                              const SizedBox(height: 12),
+                              _buildContactLink(
+                                icon: Icons.phone,
+                                text: 'Call: +254 788330998',
+                                onTap: () => _launchPhone('+254788330998'),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildContactLink(
+                                icon: Icons.chat,
+                                text: 'WhatsApp: +254 788330998',
+                                onTap: () => _launchWhatsApp('+254788330998'),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildContactLink(
+                                icon: Icons.email,
+                                text: 'Email: mu.wesonga@gmail.com',
+                                onTap: () => _launchEmail('mu.wesonga@gmail.com'),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () =>
-                              _launchWhatsApp('+254788330998', context),
-                          child: Row(
-                            children: [
-                              Icon(Icons.chat,
-                                  color: Colors.teal[700], size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                'WhatsApp: +254 788330998',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.teal[700],
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () =>
-                              _launchEmail('mu.wesonga@gmail.com', context),
-                          child: Row(
-                            children: [
-                              Icon(Icons.email,
-                                  color: Colors.teal[700], size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Email: mu.wesonga@gmail.com',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.teal[700],
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 24),
                 Card(
-                  elevation: 4,
+                  elevation: 6,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -221,29 +256,22 @@ class HelpSettingsScreen extends StatelessWidget {
                       ),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(20.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           'Additional Resources',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.w600,
                             color: Colors.teal[900],
                           ),
                         ),
                         const SizedBox(height: 12),
-                        ListTile(
-                          leading: Icon(Icons.help_outline,
-                              color: Colors.teal[700], size: 24),
-                          title: Text(
-                            'Visit Help Center',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.teal[700],
-                            ),
-                          ),
+                        _buildNavTile(
+                          icon: Icons.help_outline,
+                          title: 'Visit Help Center',
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -253,18 +281,34 @@ class HelpSettingsScreen extends StatelessWidget {
                             );
                           },
                         ),
-                        ListTile(
-                          leading: Icon(Icons.feedback,
-                              color: Colors.teal[700], size: 24),
-                          title: Text(
-                            'Send Feedback',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.teal[700],
-                            ),
-                          ),
+                        _buildNavTile(
+                          icon: Icons.feedback,
+                          title: 'Send Feedback',
                           onTap: () {
-                            Navigator.pushNamed(context, '/send_feedback');
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SendFeedbackScreen(
+                                  user: widget.user,
+                                  apiService: widget.apiService,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildNavTile(
+                          icon: Icons.support_agent,
+                          title: 'Contact Support',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ContactSupportScreen(
+                                  user: widget.user,
+                                  apiService: widget.apiService,
+                                ),
+                              ),
+                            );
                           },
                         ),
                       ],
@@ -276,6 +320,68 @@ class HelpSettingsScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildContactRow({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.teal[700], size: 20),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 16,
+            color: Colors.grey[800],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactLink({
+    required IconData icon,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.teal[700], size: 20),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.teal[700],
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavTile({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.teal[700], size: 24),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          color: Colors.grey[800],
+        ),
+      ),
+      onTap: onTap,
+      contentPadding: EdgeInsets.zero,
     );
   }
 }

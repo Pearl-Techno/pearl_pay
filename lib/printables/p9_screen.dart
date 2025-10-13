@@ -9,79 +9,141 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../models/user.dart';
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
 class P9Screen extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+  const P9Screen({
+    Key? key,
+    required this.user,
+    required this.apiService,
+  }) : super(key: key);
+
   @override
   _P9ScreenState createState() => _P9ScreenState();
 }
 
 class _P9ScreenState extends State<P9Screen> {
-  final ApiService _apiService = ApiService(client: http.Client());
-  List _salaries = [];
-  List<Map<String, dynamic>> _employees = [];
-  List<Map<String, dynamic>> _filteredEmployees = [];
+  late final ApiService _apiService;
   List<Map<String, dynamic>> _p9Data = [];
+  List<Map<String, dynamic>> _employees = [];
+  List<Map<String, dynamic>> _companies = [];
   bool _isLoading = true;
 
-  String? selectedCompany;
+  int? selectedCompanyId;
   String? selectedEmployeeId;
   int selectedYear = DateTime.now().year;
-  List<String> companyNames = ['Select Company'];
-  List<String> employeeNames = ['Select Employee'];
+  List<int> companyIds = [];
+  Map<int, String> companyIdToName = {};
 
   @override
   void initState() {
     super.initState();
+    final user = User.fromMap(widget.user); // Convert Map to User
+    _apiService = ApiService(client: http.Client(), user: user);
     _fetchCompanies();
   }
 
   Future<void> _fetchCompanies() async {
     try {
-      final employees = await _apiService.getAllEmployees();
+      final companies = await _apiService.getCompanies();
+      if (kDebugMode) {
+        print('Fetched companies: $companies');
+      }
+
+      // Convert user['company_id'] to int, handling String or int
+      final userCompanyId = widget.user['company_id'] != null
+          ? int.tryParse(widget.user['company_id'].toString())
+          : null;
+      final userCompanyName = widget.user['company_name']?.toString() ?? 'Unknown';
+
+      if (userCompanyId == null) {
+        if (kDebugMode) {
+          print('No company ID found for user');
+        }
+        setState(() {
+          companyIds = [];
+          companyIdToName = {};
+          selectedCompanyId = null;
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No company assigned to user')),
+        );
+        return;
+      }
+
+      // Find the user's company in the fetched companies
+      final userCompany = companies.firstWhere(
+        (c) => int.tryParse(c['id']?.toString() ?? '') == userCompanyId,
+        orElse: () => {
+          'id': userCompanyId.toString(),
+          'company_name': userCompanyName,
+        },
+      );
+
       setState(() {
-        _employees = employees;
-        companyNames = ['Select Company'] +
-            employees
-                .map((e) => e['company_name'] as String?)
-                .where((name) => name != null && name.isNotEmpty)
-                .toSet()
-                .cast<String>()
-                .toList();
+        _companies = [userCompany];
+        companyIds = [userCompanyId];
+        companyIdToName = {userCompanyId: userCompany['company_name']?.toString() ?? userCompanyName};
+        selectedCompanyId = userCompanyId;
       });
+
+      if (kDebugMode) {
+        print('companyIds: $companyIds');
+        print('companyIdToName: $companyIdToName');
+        print('selectedCompanyId: $selectedCompanyId');
+      }
+
+      await _fetchEmployees();
     } catch (e) {
       if (kDebugMode) {
         print('Error fetching companies: $e');
       }
+      setState(() {
+        companyIds = [];
+        companyIdToName = {};
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load companies: $e')),
+      );
     }
   }
 
-  void _updateEmployeeList() {
-    if (selectedCompany == null || selectedCompany == 'Select Company') {
+  Future<void> _fetchEmployees() async {
+    if (selectedCompanyId == null) {
       setState(() {
-        _filteredEmployees = [];
-        employeeNames = ['Select Employee'];
+        _employees = [];
         selectedEmployeeId = null;
+        _isLoading = false;
       });
       return;
     }
 
-    final filtered =
-        _employees.where((e) => e['company_name'] == selectedCompany).toList();
-    setState(() {
-      _filteredEmployees = filtered;
-      employeeNames = ['Select Employee'] +
-          filtered.map((e) => e['fullname'] as String? ?? 'Unknown').toList();
-      selectedEmployeeId = null;
-    });
+    try {
+      final employees = await _apiService.getEmployeeList(selectedCompanyId!);
+      setState(() {
+        _employees = employees;
+        selectedEmployeeId = null;
+      });
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error fetching employees: $e');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load employees: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _fetchP9Data() async {
-    if (selectedCompany == null ||
-        selectedCompany == 'Select Company' ||
-        selectedEmployeeId == null ||
-        selectedEmployeeId == 'Select Employee') {
+    if (selectedCompanyId == null || selectedEmployeeId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a company and employee')),
       );
@@ -90,135 +152,73 @@ class _P9ScreenState extends State<P9Screen> {
 
     setState(() => _isLoading = true);
     try {
-      final salaries = await _apiService.getSalaries();
-      final filteredSalaries = salaries.where((salary) {
-        final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
-        if (paymentDate == null) return false;
-        final matchesYear = paymentDate.year == selectedYear;
-        final matchesCompany = salary['company_name'] == selectedCompany;
-        final matchesEmployee =
-            salary['employee_id'].toString() == selectedEmployeeId;
-        return matchesYear && matchesCompany && matchesEmployee;
-      }).toList();
+      final p9Data = await _apiService.fetchP9Data(
+        employeeId: selectedEmployeeId!,
+        companyId: selectedCompanyId!,
+        year: selectedYear,
+      );
 
-      for (var salary in filteredSalaries) {
-        final employeeId = salary['employee_id'].toString();
-        final benefits =
-            await _apiService.fetchBenefits(employeeId, 1, selectedYear);
-        final deductions =
-            await _apiService.fetchDeductions(employeeId, 1, selectedYear);
-        salary['benefits'] = benefits;
-        salary['deductions_list'] = deductions;
-
-        final employee = _employees.firstWhere(
-          (e) => e['employee_id'].toString() == employeeId,
-          orElse: () => {},
-        );
-        salary['kra_pin'] = employee['kra_pin'] ?? salary['kra_pin'];
-        salary['position'] = employee['position'] ?? salary['position'];
-        salary['house_allowance'] =
-            employee['house_allowance'] ?? salary['house_allowance'];
-
-        final numericalKeys = [
-          'gross_pay',
-          'basic_pay',
-          'non_cash_benefits',
-          'other_earnings',
-          'overtime_amount',
-          'bonus',
-          'taxable_income',
-          'paye_deduction',
-          'nhif_deduction',
-          'nssf_deduction',
-          'pension_contributions',
-          'loan_repayment',
-          'housing_levy',
-          'housing_levy_relief',
-          'absenteeism_deduction',
-          'net_pay',
-          'deductions',
-        ];
-
-        for (var key in numericalKeys) {
-          if (salary[key] != null) {
-            final value = double.tryParse(salary[key].toString()) ?? 0.0;
-            salary[key] = value.round().toDouble();
-          }
-        }
-
-        for (var benefit in salary['benefits'] ?? []) {
-          final amount =
-              double.tryParse(benefit['amount']?.toString() ?? '0.0') ?? 0.0;
-          benefit['amount'] = amount.round().toDouble();
-        }
-        for (var deduction in salary['deductions_list'] ?? []) {
-          final amount =
-              double.tryParse(deduction['amount']?.toString() ?? '0.0') ?? 0.0;
-          deduction['amount'] = amount.round().toDouble();
-        }
-      }
-
-      // Prepare P9 data
-      List<Map<String, dynamic>> p9Data = [];
+      // Ensure all 12 months are represented
+      final formattedP9Data = <Map<String, dynamic>>[];
       for (int month = 1; month <= 12; month++) {
-        final salaryForMonth = filteredSalaries.firstWhere(
-          (salary) =>
-              DateTime.tryParse(salary['payment_date'] ?? '')?.month == month,
+        final dataForMonth = p9Data.firstWhere(
+          (data) =>
+              DateFormat('MMMM').format(DateTime(selectedYear, month)) ==
+              data['month'],
           orElse: () => {},
         );
 
-        // Check if there is data for this month
-        final hasData = salaryForMonth.isNotEmpty;
-
+        final hasData = dataForMonth.isNotEmpty;
         final basicSalary =
-            hasData ? (salaryForMonth['basic_pay']?.toDouble() ?? 0.0) : 0.0;
+            hasData ? (dataForMonth['basic_salary']?.toDouble() ?? 0.0) : 0.0;
         final e1 = hasData ? (basicSalary * 0.3) : 0.0; // 30% of basic salary
         final e2 = hasData
-            ? (salaryForMonth['pension_contributions']?.toDouble() ?? 0.0)
+            ? (dataForMonth['pension_contributions']?.toDouble() ?? 0.0)
             : 0.0;
-        const e3 = 20000.00; // Fixed value as in the image
-        const ownerOccupiedInterest = 200.00; // Fixed value as in the image
+        const e3 = 20000.00; // Fixed value
+        const ownerOccupiedInterest = 200.00; // Fixed value
         final g = hasData
             ? ([e1, e2, e3].reduce((a, b) => a < b ? a : b) +
                 ownerOccupiedInterest)
             : 0.0;
 
-        p9Data.add({
+        formattedP9Data.add({
           'month': DateFormat('MMMM').format(DateTime(selectedYear, month)),
           'hasData': hasData,
           'basic_salary': basicSalary,
-          'benefits': hasData
-              ? (salaryForMonth['non_cash_benefits']?.toDouble() ?? 0.0)
-              : 0.0,
-          'quarters': 0.0, // Not available in payslip data
+          'benefits':
+              hasData ? (dataForMonth['benefits']?.toDouble() ?? 0.0) : 0.0,
+          'quarters':
+              hasData ? (dataForMonth['quarters']?.toDouble() ?? 0.0) : 0.0,
           'gross_pay':
-              hasData ? (salaryForMonth['gross_pay']?.toDouble() ?? 0.0) : 0.0,
+              hasData ? (dataForMonth['gross_pay']?.toDouble() ?? 0.0) : 0.0,
           'e1': e1,
           'e2': e2,
           'e3': hasData ? e3 : 0.0,
           'owner_interest': hasData ? ownerOccupiedInterest : 0.0,
           'retirement_added': g,
           'chargeable_pay': hasData
-              ? (salaryForMonth['taxable_income']?.toDouble() ?? 0.0)
+              ? (dataForMonth['taxable_income']?.toDouble() ?? 0.0)
               : 0.0,
           'tax_charged': hasData
-              ? (salaryForMonth['paye_deduction']?.toDouble() ?? 0.0)
+              ? (dataForMonth['paye_deduction']?.toDouble() ?? 0.0)
               : 0.0,
-          'personal_relief':
-              hasData ? 2400.00 : 0.0, // Fixed value as in the image
-          'insurance_relief':
-              hasData ? 142.50 : 0.0, // Fixed value as in the image
+          'personal_relief': hasData
+              ? (dataForMonth['personal_relief']?.toDouble() ?? 2400.00)
+              : 0.0,
+          'insurance_relief': hasData
+              ? (dataForMonth['insurance_relief']?.toDouble() ?? 142.50)
+              : 0.0,
           'paye_tax': hasData
-              ? ((salaryForMonth['paye_deduction']?.toDouble() ?? 0.0) -
-                  2400.00 -
-                  142.50)
+              ? ((dataForMonth['paye_deduction']?.toDouble() ?? 0.0) -
+                  (dataForMonth['personal_relief']?.toDouble() ?? 2400.00) -
+                  (dataForMonth['insurance_relief']?.toDouble() ?? 142.50))
               : 0.0,
         });
       }
 
       setState(() {
-        _salaries = filteredSalaries;
-        _p9Data = p9Data;
+        _p9Data = formattedP9Data;
         _isLoading = false;
       });
     } catch (e) {
@@ -238,10 +238,15 @@ class _P9ScreenState extends State<P9Screen> {
       orElse: () => {},
     );
 
+    final company = _companies.firstWhere(
+      (c) => c['id'] == (employee['company_id'] ?? selectedCompanyId),
+      orElse: () => {'company_name': 'N/A', 'kra_pin': 'N/A'},
+    );
+
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4.landscape, // Ensure landscape orientation
-        margin: const pw.EdgeInsets.all(20), // Add margins to reduce congestion
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(20),
         build: (context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -263,7 +268,7 @@ class _P9ScreenState extends State<P9Screen> {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                          'Employer\'s Name: ${employee['company_name'] ?? 'N/A'}',
+                          'Employer\'s Name: ${company['company_name'] ?? 'N/A'}',
                           style: const pw.TextStyle(fontSize: 8)),
                       pw.Text(
                           'Employee\'s Main Name: ${employee['fullname']?.split(' ').first ?? 'N/A'}',
@@ -276,9 +281,9 @@ class _P9ScreenState extends State<P9Screen> {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Employer\'s P.I.N: N/A',
-                          style: const pw.TextStyle(
-                              fontSize: 8)), // Not available in payslip data
+                      pw.Text(
+                          'Employer\'s P.I.N: ${company['kra_pin'] ?? 'N/A'}',
+                          style: const pw.TextStyle(fontSize: 8)),
                       pw.Text(
                           'Employee\'s P.I.N: ${employee['kra_pin'] ?? 'N/A'}',
                           style: const pw.TextStyle(fontSize: 8)),
@@ -792,7 +797,6 @@ class _P9ScreenState extends State<P9Screen> {
     try {
       final pdfContent = await _generateP9Pdf();
 
-      // Save to local disk
       String baseDir = Platform.isWindows
           ? r'C:\p9_forms'
           : '${(await getApplicationDocumentsDirectory()).path}/p9_forms';
@@ -804,7 +808,7 @@ class _P9ScreenState extends State<P9Screen> {
 
       final employee = _employees.firstWhere(
         (e) => e['employee_id'].toString() == selectedEmployeeId,
-        orElse: () => {},
+        orElse: () => {'fullname': 'unknown'},
       );
       final filename =
           'p9_${employee['fullname']?.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_') ?? 'unknown'}_$selectedYear.pdf';
@@ -832,15 +836,21 @@ class _P9ScreenState extends State<P9Screen> {
 
   @override
   Widget build(BuildContext context) {
+    final userCompanyName = widget.user['company_name']?.toString() ?? 'Unknown';
+
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'P9 Screen',
+        title: 'P9 Forms',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          print('Profile tapped');
+          if (kDebugMode) {
+            print('Profile tapped');
+          }
         },
       ),
       body: Container(
@@ -874,37 +884,42 @@ class _P9ScreenState extends State<P9Screen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildDropdown(
-                        value: selectedCompany ?? 'Select Company',
-                        items: companyNames,
-                        itemBuilder: (company) => company,
-                        onChanged: (value) {
-                          setState(() {
-                            selectedCompany = value;
-                            _updateEmployeeList();
-                          });
-                        },
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.teal[200]!),
+                          ),
+                          child: Text(
+                            userCompanyName,
+                            style: TextStyle(
+                              color: Colors.teal[900],
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                       _buildDropdown(
-                        value: selectedEmployeeId == null
+                        value: selectedEmployeeId,
+                        items: [
+                          null,
+                          ..._employees.map((e) => e['employee_id'].toString())
+                        ],
+                        itemBuilder: (id) => id == null
                             ? 'Select Employee'
-                            : _filteredEmployees.firstWhere((e) =>
-                                e['employee_id'].toString() ==
-                                selectedEmployeeId)['fullname'],
-                        items: employeeNames,
-                        itemBuilder: (employee) => employee,
+                            : _employees
+                                .firstWhere(
+                                    (e) => e['employee_id'].toString() == id,
+                                    orElse: () =>
+                                        {'fullname': 'Unknown'})['fullname']
+                                .toString(),
                         onChanged: (value) {
-                          if (value == 'Select Employee') {
-                            setState(() {
-                              selectedEmployeeId = null;
-                            });
-                            return;
-                          }
-                          final selectedEmployee = _filteredEmployees
-                              .firstWhere((e) => e['fullname'] == value);
                           setState(() {
-                            selectedEmployeeId =
-                                selectedEmployee['employee_id'].toString();
+                            selectedEmployeeId = value;
                           });
                         },
                       ),
@@ -1100,9 +1115,9 @@ class _P9ScreenState extends State<P9Screen> {
   }
 
   Widget _buildDropdown<T>({
-    required T value,
-    required List<T> items,
-    required String Function(T) itemBuilder,
+    required T? value,
+    required List<T?> items,
+    required String Function(T?) itemBuilder,
     required ValueChanged<T?> onChanged,
   }) {
     return Container(

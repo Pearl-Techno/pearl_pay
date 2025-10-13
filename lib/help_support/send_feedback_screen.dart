@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
 class SendFeedbackScreen extends StatefulWidget {
-  const SendFeedbackScreen({super.key});
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const SendFeedbackScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
 
   @override
   _SendFeedbackScreenState createState() => _SendFeedbackScreenState();
@@ -13,6 +22,10 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _feedbackController = TextEditingController();
+  bool _isSubmitting = false;
+  final int _maxFeedbackLength = 500;
+  final bool _useEmailClient =
+      false; // Set to true to use email client fallback
 
   @override
   void dispose() {
@@ -21,16 +34,100 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
     super.dispose();
   }
 
-  void _submitFeedback() {
-    if (_formKey.currentState!.validate()) {
+  Future<void> _submitFeedback() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+
+    if (_useEmailClient) {
+      await _sendViaEmailClient();
+    } else {
+      await _sendViaApi();
+    }
+
+    setState(() => _isSubmitting = false);
+  }
+
+  Future<void> _sendViaApi() async {
+    try {
+      await widget.apiService.sendFeedback({
+        'title': _titleController.text,
+        'feedback': _feedbackController.text,
+        'user_id': widget.user['id']?.toString() ?? 'N/A',
+        'company_id': widget.user['company_id']?.toString() ?? 'N/A',
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Feedback Submitted'),
+          content: const Text('Feedback submitted successfully'),
           backgroundColor: Colors.teal[700],
+          duration: const Duration(seconds: 2),
         ),
       );
       _titleController.clear();
       _feedbackController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to submit feedback: $e'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _submitFeedback,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendViaEmailClient() async {
+    final email = 'mu.wesonga@gmail.com';
+    final subject = 'Feedback: ${_titleController.text}';
+    final body = '''
+User ID: ${widget.user['id']?.toString() ?? 'N/A'}
+Company ID: ${widget.user['company_id']?.toString() ?? 'N/A'}
+Title: ${_titleController.text}
+
+Feedback:
+${_feedbackController.text}
+''';
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+      queryParameters: {
+        'subject': subject,
+        'body': body,
+      },
+    );
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Opened email client'),
+            backgroundColor: Colors.teal[700],
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        _titleController.clear();
+        _feedbackController.clear();
+      } else {
+        throw 'Could not launch email client';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open email client: $e'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _submitFeedback,
+          ),
+        ),
+      );
     }
   }
 
@@ -65,13 +162,21 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
                   'Share Your Thoughts',
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     color: Colors.teal[900],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Help us improve by sharing your suggestions or issues.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[800],
                   ),
                 ),
                 const SizedBox(height: 16),
                 Card(
-                  elevation: 4,
+                  elevation: 6,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: Container(
@@ -148,8 +253,11 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
                               hintText:
                                   'e.g., Please add a feature to export payslips as PDF',
                               hintStyle: TextStyle(color: Colors.grey[600]),
+                              counterText:
+                                  '${_feedbackController.text.length}/$_maxFeedbackLength',
                             ),
                             maxLines: 4,
+                            maxLength: _maxFeedbackLength,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Please enter your feedback';
@@ -162,7 +270,7 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _submitFeedback,
+                              onPressed: _isSubmitting ? null : _submitFeedback,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.teal[700],
                                 foregroundColor: Colors.white,
@@ -172,10 +280,13 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
-                              child: const Text(
-                                'Submit',
-                                style: TextStyle(fontSize: 16),
-                              ),
+                              child: _isSubmitting
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
+                                  : const Text(
+                                      'Submit',
+                                      style: TextStyle(fontSize: 16),
+                                    ),
                             ),
                           ),
                         ],

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../company_management/add_company_screen.dart';
+import '../services/services.dart'; // Import ApiService
 import '../settings_screens/about_settings_screen.dart';
 import '../settings_screens/account_settings_screen.dart';
 import '../settings_screens/help_settings_screen.dart';
@@ -14,24 +16,89 @@ import '../settings_screens/paye_rates_screen.dart';
 import '../settings_screens/privacy_settings_screen.dart';
 import '../settings_screens/shif_rates_screen.dart';
 import '../widgets/custom_app_bar.dart';
+import 'login_screen.dart'; // Import LoginScreen for logout navigation
 
+class SettingsScreen extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final ApiService apiService;
 
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
+
+  @override
+  _SettingsScreenState createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  // Logout function to clear SharedPreferences and navigate to LoginScreen
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final isAdmin = widget.user['role'] == 'admin'; // Check if user is admin
+
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          // Add your notification handling logic here
           print('Notifications tapped');
         },
         onProfileTap: () {
-          // Add your profile handling logic here
-          print('Profile tapped');
+          // Show profile options, including logout
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.person, color: Colors.teal[700]),
+                    title: Text('Profile: ${widget.user['username']}'),
+                    subtitle: Text('Role: ${widget.user['role']}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout, color: Colors.red[700]),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context); // Close bottom sheet
+                      _logout(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
       body: Container(
@@ -59,7 +126,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // First row with 7 tiles
+                    // First row with 4-7 tiles (Add Company is admin-only)
                     SizedBox(
                       height: 110,
                       child: Row(
@@ -70,144 +137,185 @@ class SettingsScreen extends StatelessWidget {
                             icon: Icons.account_circle,
                             title: 'Account',
                             subtitle: 'Manage account',
-                            destination: const AccountSettingsScreen(),
+                            destination: AccountSettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.blue[50]!,
                             iconColor: Colors.blue[500]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
                           _buildSettingsTile(
                             context,
                             icon: Icons.notifications,
                             title: 'Notifications',
                             subtitle: 'Manage alerts',
-                            destination: const NotificationsSettingsScreen(),
+                            destination: NotificationsSettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.green[50]!,
                             iconColor: Colors.green[500]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
                           _buildSettingsTile(
                             context,
                             icon: Icons.lock,
                             title: 'Privacy',
                             subtitle: 'Privacy settings',
-                            destination: const PrivacySettingsScreen(),
+                            destination: PrivacySettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.yellow[50]!,
                             iconColor: Colors.yellow[700]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
                           _buildSettingsTile(
                             context,
                             icon: Icons.language,
                             title: 'Language',
                             subtitle: 'Language options',
-                            destination: const LanguageSettingsScreen(),
+                            destination: LanguageSettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.orange[50]!,
                             iconColor: Colors.orange[500]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
                           _buildSettingsTile(
                             context,
                             icon: Icons.help,
                             title: 'Help',
                             subtitle: 'Get support',
-                            destination: const HelpSettingsScreen(),
+                            destination: HelpSettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.purple[50]!,
                             iconColor: Colors.purple[500]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
                           _buildSettingsTile(
                             context,
                             icon: Icons.info,
                             title: 'About',
                             subtitle: 'App info',
-                            destination: const AboutSettingsScreen(),
+                            destination: AboutSettingsScreen(
+                              user: widget.user,
+                              apiService: widget.apiService,
+                            ),
                             backgroundColor: Colors.teal[50]!,
                             iconColor: Colors.teal[500]!,
-                            tileCount: 7,
+                            tileCount: isAdmin ? 7 : 6,
                           ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.business,
-                            title: 'Add Company',
-                            subtitle: 'Add company',
-                            destination: const AddCompanyScreen(),
-                            backgroundColor: Colors.indigo[50]!,
-                            iconColor: Colors.indigo[500]!,
-                            tileCount: 7,
-                          ),
+                          if (isAdmin) // Admin-only
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.business,
+                              title: 'Add Company',
+                              subtitle: 'Add company',
+                              destination: AddCompanyScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.indigo[50]!,
+                              iconColor: Colors.indigo[500]!,
+                              tileCount: isAdmin ? 7 : 6,
+                            ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
-                    // Second row with 6 tiles
-                    SizedBox(
-                      height: 110,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'SHIF Rates',
-                            subtitle: 'Set SHIF rates',
-                            destination: const SHIFRatesScreen(),
-                            backgroundColor: Colors.blue[50]!,
-                            iconColor: Colors.blue[500]!,
-                            tileCount: 6,
-                          ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'NSSF Rates',
-                            subtitle: 'Set NSSF rates',
-                            destination: const NSSFRatesScreen(),
-                            backgroundColor: Colors.green[50]!,
-                            iconColor: Colors.green[500]!,
-                            tileCount: 6,
-                          ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'Housing Levy',
-                            subtitle: 'Set levy rates',
-                            destination: const HousingLevyRatesScreen(),
-                            backgroundColor: Colors.yellow[50]!,
-                            iconColor: Colors.yellow[700]!,
-                            tileCount: 6,
-                          ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'Loan Rates',
-                            subtitle: 'Set loan rates',
-                            destination: const LoanRatesScreen(),
-                            backgroundColor: Colors.orange[50]!,
-                            iconColor: Colors.orange[500]!,
-                            tileCount: 6,
-                          ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'Overtime Rates',
-                            subtitle: 'Set overtime rates',
-                            destination: const OvertimeRatesScreen(),
-                            backgroundColor: Colors.purple[50]!,
-                            iconColor: Colors.purple[500]!,
-                            tileCount: 6,
-                          ),
-                          _buildSettingsTile(
-                            context,
-                            icon: Icons.attach_money,
-                            title: 'PAYE Rates',
-                            subtitle: 'Set PAYE rates',
-                            destination: const PAYERatesScreen(),
-                            backgroundColor: Colors.teal[50]!,
-                            iconColor: Colors.teal[500]!,
-                            tileCount: 6,
-                          ),
-                        ],
+                    // Second row with 0-6 tiles (all admin-only)
+                    if (isAdmin) // Only show for admins
+                      SizedBox(
+                        height: 110,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'SHIF Rates',
+                              subtitle: 'Set SHIF rates',
+                              destination: SHIFRatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.blue[50]!,
+                              iconColor: Colors.blue[500]!,
+                              tileCount: 6,
+                            ),
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'NSSF Rates',
+                              subtitle: 'Set NSSF rates',
+                              destination: NSSFRatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.green[50]!,
+                              iconColor: Colors.green[500]!,
+                              tileCount: 6,
+                            ),
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'Housing Levy',
+                              subtitle: 'Set levy rates',
+                              destination: HousingLevyRatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.yellow[50]!,
+                              iconColor: Colors.yellow[700]!,
+                              tileCount: 6,
+                            ),
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'Loan Rates',
+                              subtitle: 'Set loan rates',
+                              destination: LoanRatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.orange[50]!,
+                              iconColor: Colors.orange[500]!,
+                              tileCount: 6,
+                            ),
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'Overtime Rates',
+                              subtitle: 'Set overtime rates',
+                              destination: OvertimeRatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.purple[50]!,
+                              iconColor: Colors.purple[500]!,
+                              tileCount: 6,
+                            ),
+                            _buildSettingsTile(
+                              context,
+                              icon: Icons.attach_money,
+                              title: 'PAYE Rates',
+                              subtitle: 'Set PAYE rates',
+                              destination: PAYERatesScreen(
+                                user: widget.user,
+                                apiService: widget.apiService,
+                              ),
+                              backgroundColor: Colors.teal[50]!,
+                              iconColor: Colors.teal[500]!,
+                              tileCount: 6,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -290,4 +398,3 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
-

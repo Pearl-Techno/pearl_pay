@@ -1,28 +1,96 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../help_support/contact_support_screen.dart';
 import '../help_support/faq_screen.dart';
 import '../help_support/send_feedback_screen.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
-
-
+import 'login_screen.dart';
 
 class HelpSupportScreen extends StatelessWidget {
-  const HelpSupportScreen({super.key});
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const HelpSupportScreen({
+    Key? key,
+    required this.user,
+    required this.apiService,
+  }) : super(key: key);
+
+  // Logout function to clear SharedPreferences and navigate to LoginScreen
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Validate user data
+    if (user['username'] == null || user['role'] == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('User data is incomplete (missing username or role)')),
+        );
+      });
+    }
+
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Help & Support',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          // Add your notification handling logic here
           print('Notifications tapped');
         },
         onProfileTap: () {
-          // Add your profile handling logic here
-          print('Profile tapped');
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.person, color: Colors.teal[700]),
+                    title: Text('Profile: ${user['username'] ?? 'Unknown'}'),
+                    subtitle: Text('Role: ${user['role'] ?? 'Unknown'}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout, color: Colors.red[700]),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _logout(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
       body: Container(
@@ -44,14 +112,14 @@ class HelpSupportScreen extends StatelessWidget {
                     Text(
                       'How can we help you?',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.teal[900],
                       ),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
-                      height: 110,
+                      height: 120,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: [
@@ -59,10 +127,10 @@ class HelpSupportScreen extends StatelessWidget {
                             context,
                             icon: Icons.help_outline,
                             title: 'FAQ',
-                            subtitle: 'View FAQs',
+                            subtitle: 'View frequently asked questions',
                             destination: const FAQScreen(),
-                            backgroundColor: Colors.blue[50]!,
-                            iconColor: Colors.blue[500]!,
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 3,
                           ),
                           const SizedBox(width: 16),
@@ -70,10 +138,13 @@ class HelpSupportScreen extends StatelessWidget {
                             context,
                             icon: Icons.contact_support,
                             title: 'Contact Support',
-                            subtitle: 'Get assistance',
-                            destination: const ContactSupportScreen(),
-                            backgroundColor: Colors.green[50]!,
-                            iconColor: Colors.green[500]!,
+                            subtitle: 'Get assistance from our team',
+                            destination: ContactSupportScreen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 3,
                           ),
                           const SizedBox(width: 16),
@@ -82,9 +153,12 @@ class HelpSupportScreen extends StatelessWidget {
                             icon: Icons.feedback,
                             title: 'Send Feedback',
                             subtitle: 'Share your thoughts',
-                            destination: const SendFeedbackScreen(),
-                            backgroundColor: Colors.yellow[50]!,
-                            iconColor: Colors.yellow[700]!,
+                            destination: SendFeedbackScreen(
+                              user: user,
+                              apiService: apiService,
+                            ),
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 3,
                           ),
                         ],
@@ -130,7 +204,7 @@ class HelpSupportScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           width: tileWidth,
-          height: 100,
+          height: 110,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -143,24 +217,24 @@ class HelpSupportScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 24, color: iconColor),
-              const SizedBox(height: 6),
+              Icon(icon, size: 28, color: iconColor),
+              const SizedBox(height: 8),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
                   color: Colors.teal[900],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 10,
+                  fontSize: 12,
                   color: Colors.grey[700],
                 ),
                 overflow: TextOverflow.ellipsis,

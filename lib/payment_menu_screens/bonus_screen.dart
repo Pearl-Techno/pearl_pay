@@ -1,8 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../models/user.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
-class BonusScreen extends StatelessWidget {
+class BonusScreen extends StatefulWidget {
+  final User user;
+  final ApiService apiService;
+
+  const BonusScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
+
+  @override
+  State<BonusScreen> createState() => _BonusScreenState();
+}
+
+class _BonusScreenState extends State<BonusScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(

@@ -1,29 +1,44 @@
 import 'dart:io';
 
-import 'package:csv/csv.dart'; // Add this package to pubspec.yaml
+import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/user.dart';
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
+// SHIFExport: Component for displaying and exporting SHIF data
 class SHIFExport {
   final String title = 'SHIF Export';
+  final Map<String, dynamic> user; // User data from HomeScreen/ExportsScreen
+  final ApiService apiService; // ApiService for backend calls
+  final int? companyId; // Explicit company ID for restriction
   final IconData icon = Icons.medical_services;
-  final ApiService _apiService = ApiService(client: http.Client());
 
+  SHIFExport({
+    required this.user,
+    required this.apiService,
+    this.companyId,
+  });
+
+  // Build Card: Creates a clickable card for the ExportsScreen
   Widget buildCard(BuildContext context) {
     return Card(
-      elevation: 6, // Match HomeScreen
+      elevation: 6,
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         leading: Icon(icon, color: Colors.teal[700]),
-        title: Text(title,
-            style: TextStyle(
-                color: Colors.teal[900], fontWeight: FontWeight.w500)),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: Colors.teal[900],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         trailing: Icon(Icons.file_download, color: Colors.teal[700]),
         onTap: () {
           Navigator.push(
@@ -35,15 +50,65 @@ class SHIFExport {
     );
   }
 
+  // Build Details Page: Creates the SHIF export details page
   Widget buildDetailsPage(BuildContext context) {
-    return _SHIFExportDetailsPage(apiService: _apiService);
+    return _SHIFExportDetailsPage(
+      apiService: apiService,
+      user: user,
+      companyId: companyId,
+    );
+  }
+
+  // Export: Generates a detailed report CSV for the current month/year
+  Future<String> export() async {
+    if (companyId == null) {
+      throw Exception('No company ID provided for export');
+    }
+    final detailsPage = _SHIFExportDetailsPage(
+      apiService: apiService,
+      user: user,
+      companyId: companyId,
+    );
+    final state = detailsPage.createState();
+    state.selectedMonth = DateTime.now().month;
+    state.selectedYear = DateTime.now().year;
+    await state._fetchSHIFData();
+    return await state._exportToCSV(
+      fileNamePrefix: 'shif_detailed_report',
+      headers: [
+        'Employee ID',
+        'First Name',
+        'Last Name',
+        'National ID',
+        'NHIF Number',
+        'Amount',
+        'Phone Number',
+        'Company Name'
+      ],
+      fields: [
+        'employee_id',
+        'first_name',
+        'last_name',
+        'national_id',
+        'nhif_number',
+        'amount',
+        'phone_number',
+        'company_name'
+      ],
+    );
   }
 }
 
 class _SHIFExportDetailsPage extends StatefulWidget {
   final ApiService apiService;
+  final Map<String, dynamic> user;
+  final int? companyId;
 
-  const _SHIFExportDetailsPage({required this.apiService});
+  const _SHIFExportDetailsPage({
+    required this.apiService,
+    required this.user,
+    this.companyId,
+  });
 
   @override
   _SHIFExportDetailsPageState createState() => _SHIFExportDetailsPageState();
@@ -52,248 +117,188 @@ class _SHIFExportDetailsPage extends StatefulWidget {
 class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _filteredEmployees = [];
-  List<String> _companyNames = ['All Companies'];
   bool _isLoading = true;
+  bool _isExporting = false;
+  String? _errorMessage;
   int selectedMonth = DateTime.now().month;
   int selectedYear = DateTime.now().year;
-  String? selectedCompany;
+  late User _userModel;
 
   @override
   void initState() {
     super.initState();
+    // Validate and convert user map to User object
+    try {
+      final effectiveCompanyId = widget.companyId ??
+          (widget.user['company_id'] != null
+              ? int.tryParse(widget.user['company_id'].toString())
+              : null);
+      if (effectiveCompanyId == null || effectiveCompanyId == 0) {
+        throw Exception('No valid company ID provided');
+      }
+      _userModel = User(
+        companyId: effectiveCompanyId,
+        employeeId: widget.user['employee_id']?.toString() ?? 'N/A',
+        role: (widget.user['role']?.toString() ?? 'unknown').toLowerCase(),
+        userId: widget.user['user_id']?.toString(),
+        username: widget.user['username']?.toString(),
+        companyName: widget.user['company_name']?.toString() ?? 'Unknown',
+      );
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Access denied: $e')),
+        );
+        Navigator.pop(context);
+      });
+      return;
+    }
     _fetchSHIFData();
   }
 
+  // Fetch SHIF Data: Retrieves and filters employee and salary data
   Future<void> _fetchSHIFData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     try {
-      final employees = await widget.apiService.getEmployeeList();
-      final salaries = await widget.apiService.getSalaries();
-
-      final companyNames = ['All Companies'] +
-          employees
-              .map((e) => e['company_name'] as String?)
-              .where((name) => name != null && name.isNotEmpty)
-              .toSet()
-              .cast<String>()
-              .toList();
+      final companyId = _userModel.companyId;
+      final employees = await widget.apiService.getEmployeeList(companyId);
+      final salaries = await widget.apiService.getSalaries(companyId);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         final matchesMonthYear = paymentDate != null &&
             paymentDate.month == selectedMonth &&
             paymentDate.year == selectedYear;
-        final matchesCompany = selectedCompany == null ||
-            selectedCompany == 'All Companies' ||
-            salary['company_name'] == selectedCompany;
         final hasSHIF =
             (double.tryParse(salary['nhif_deduction']?.toString() ?? '0.0') ??
                     0.0) >
                 0;
-        return matchesMonthYear && matchesCompany && hasSHIF;
+        return matchesMonthYear && hasSHIF;
       }).toList();
 
       final shifEmployeeIds = filteredSalaries
-          .map((salary) => salary['employee_id'].toString())
+          .map((salary) => salary['employee_id']?.toString())
+          .where((id) => id != null)
           .toSet();
 
       final filteredEmployees = employees.where((employee) {
-        return shifEmployeeIds.contains(employee['employee_id'].toString());
+        return shifEmployeeIds.contains(employee['employee_id']?.toString());
       }).map((employee) {
         final salary = filteredSalaries.firstWhere(
           (s) =>
-              s['employee_id'].toString() == employee['employee_id'].toString(),
+              s['employee_id']?.toString() ==
+              employee['employee_id']?.toString(),
           orElse: () => {},
         );
         final nameParts = _splitFullName(employee['fullname']);
         return {
-          'employee_id': employee['employee_id'] ?? 'N/A',
+          'employee_id': employee['employee_id']?.toString() ?? 'N/A',
           'first_name': nameParts['firstName'] ?? 'N/A',
           'last_name': nameParts['lastName'] ?? 'N/A',
-          'national_id': employee['national_id'] ?? 'N/A',
-          'nhif_number': employee['nhif'] ?? 'N/A',
-          'amount': salary['nhif_deduction'] ?? '0.0',
-          'phone_number': employee['tel'] ?? 'N/A',
-          'company_name': employee['company_name'] ?? 'N/A',
+          'national_id': employee['national_id']?.toString() ?? 'N/A',
+          'nhif_number': employee['nhif']?.toString() ?? 'N/A',
+          'amount': salary['nhif_deduction']?.toString() ?? '0.0',
+          'phone_number': employee['tel']?.toString() ?? 'N/A',
+          'company_name':
+              employee['company_name']?.toString() ?? _userModel.companyName,
         };
       }).toList();
 
       setState(() {
         _employees = employees;
         _filteredEmployees = filteredEmployees;
-        _companyNames = companyNames;
-        selectedCompany ??= 'All Companies';
         _isLoading = false;
       });
+
+      if (kDebugMode) {
+        print(
+            'Fetched SHIF data for company: ${_userModel.companyName} ($companyId)');
+        print('Filtered employees: ${filteredEmployees.length}');
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load SHIF data: $e')),
-      );
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load SHIF data: $e';
+      });
+      if (kDebugMode) {
+        print('Error fetching SHIF data: $e');
+      }
     }
   }
 
-  Future<void> _exportContributions() async {
+  // Export to CSV: Exports SHIF data with customizable fields and file name
+  Future<String> _exportToCSV({
+    required String fileNamePrefix,
+    required List<String> headers,
+    required List<String> fields,
+  }) async {
     if (_filteredEmployees.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No data available to export')),
       );
-      return;
+      return '';
     }
 
+    setState(() => _isExporting = true);
+
     try {
+      final numberFormat = NumberFormat('#,##0.00', 'en_US');
       final List<List<dynamic>> rows = [
-        ['Employee ID', 'NHIF Number', 'Amount'],
-        ..._filteredEmployees.map((employee) {
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['employee_id'] ?? 'N/A',
-            employee['nhif_number'] ?? 'N/A',
-            numberFormat.format(
-                double.tryParse(employee['amount']?.toString() ?? '0.0') ??
-                    0.0),
-          ];
-        }),
+        headers,
+        ..._filteredEmployees.map((employee) => fields.map((field) {
+              if (field == 'amount') {
+                return numberFormat.format(
+                    double.tryParse(employee[field]?.toString() ?? '0.0') ??
+                        0.0);
+              }
+              return employee[field]?.toString() ?? 'N/A';
+            }).toList()),
       ];
 
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/shif_contributions_$monthYear.csv';
+      final csv = const ListToCsvConverter().convert(rows);
+      final directory = await getTemporaryDirectory();
+      final monthYear = DateFormat('MMM_yyyy')
+          .format(DateTime(selectedYear, selectedMonth))
+          .replaceAll(' ', '_');
+      final sanitizedCompanyName =
+          (_userModel.companyName ?? 'Unknown').replaceAll(' ', '_');
+      final filePath =
+          '${directory.path}/${fileNamePrefix}_${sanitizedCompanyName}_$monthYear.csv';
       final file = File(filePath);
 
       await file.writeAsString(csv);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('SHIF Contributions exported to $filePath'),
+          content: Text('Exported to $filePath'),
           backgroundColor: Colors.teal[700],
         ),
       );
+      return filePath;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export contributions: $e')),
-      );
-    }
-  }
-
-  Future<void> _exportDetailedReport() async {
-    if (_filteredEmployees.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No data available to export')),
-      );
-      return;
-    }
-
-    try {
-      final List<List<dynamic>> rows = [
-        [
-          'Employee ID',
-          'First Name',
-          'Last Name',
-          'National ID',
-          'NHIF Number',
-          'Amount',
-          'Phone Number',
-          'Company Name'
-        ],
-        ..._filteredEmployees.map((employee) {
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['employee_id'] ?? 'N/A',
-            employee['first_name'] ?? 'N/A',
-            employee['last_name'] ?? 'N/A',
-            employee['national_id'] ?? 'N/A',
-            employee['nhif_number'] ?? 'N/A',
-            numberFormat.format(
-                double.tryParse(employee['amount']?.toString() ?? '0.0') ??
-                    0.0),
-            employee['phone_number'] ?? 'N/A',
-            employee['company_name'] ?? 'N/A',
-          ];
-        }),
-      ];
-
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/shif_detailed_report_$monthYear.csv';
-      final file = File(filePath);
-
-      await file.writeAsString(csv);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('SHIF Detailed Report exported to $filePath'),
-          backgroundColor: Colors.teal[700],
+          content: Text('Failed to export: $e'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _exportToCSV(
+              fileNamePrefix: fileNamePrefix,
+              headers: headers,
+              fields: fields,
+            ),
+          ),
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export detailed report: $e')),
-      );
+      return '';
+    } finally {
+      setState(() => _isExporting = false);
     }
   }
 
-  Future<void> _exportToCSV() async {
-    if (_filteredEmployees.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No data available to export')),
-      );
-      return;
-    }
-
-    try {
-      final List<List<dynamic>> rows = [
-        [
-          'Employee ID',
-          'First Name',
-          'Last Name',
-          'National ID',
-          'NHIF Number',
-          'Amount',
-          'Phone Number'
-        ],
-        ..._filteredEmployees.map((employee) {
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['employee_id'] ?? 'N/A',
-            employee['first_name'] ?? 'N/A',
-            employee['last_name'] ?? 'N/A',
-            employee['national_id'] ?? 'N/A',
-            employee['nhif_number'] ?? 'N/A',
-            numberFormat.format(
-                double.tryParse(employee['amount']?.toString() ?? '0.0') ??
-                    0.0),
-            employee['phone_number'] ?? 'N/A',
-          ];
-        }),
-      ];
-
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/shif_export_$monthYear.csv';
-      final file = File(filePath);
-
-      await file.writeAsString(csv);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('SHIF data exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export to CSV: $e')),
-      );
-    }
-  }
-
+  // Split Full Name: Splits a full name into first and last names
   Map<String, String> _splitFullName(String? fullName) {
     final nameParts = (fullName ?? 'N/A').trim().split(' ');
     if (nameParts.isEmpty) {
@@ -308,50 +313,80 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
     };
   }
 
+  // Build Dropdown: Creates a styled dropdown widget
   Widget _buildDropdown<T>({
+    required String label,
     required T value,
     required List<T> items,
     required String Function(T) itemBuilder,
     required ValueChanged<T?> onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
-                  ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.teal[900],
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.teal[200]!),
+          ),
+          child: DropdownButton<T>(
+            value: value,
+            items: items
+                .map((item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        itemBuilder(item),
+                        style: TextStyle(color: Colors.teal[900]),
+                      ),
+                    ))
+                .toList(),
+            onChanged: onChanged,
+            underline: const SizedBox(),
+            dropdownColor: Colors.white,
+            icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
+            isExpanded: true,
+          ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final numberFormat = NumberFormat('#,##0.00', 'en_US');
+
     return Scaffold(
       appBar: CustomAppBar(
         title: 'SHIF Export',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          print('Profile tapped');
+          if (kDebugMode) {
+            print('Profile tapped');
+          }
         },
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: _fetchSHIFData,
+            tooltip: 'Refresh Data',
+          ),
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -386,45 +421,72 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            _buildDropdown(
-                              value: selectedMonth,
-                              items: List.generate(12, (index) => index + 1),
-                              itemBuilder: (month) => DateFormat('MMMM')
-                                  .format(DateTime(selectedYear, month)),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedMonth = value!;
-                                  _fetchSHIFData();
-                                });
-                              },
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.teal[200]!),
+                                ),
+                                child: Text(
+                                  _userModel.companyName ?? 'Unknown',
+                                  style: TextStyle(
+                                    color: Colors.teal[900],
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
                             ),
-                            _buildDropdown(
-                              value: selectedYear,
-                              items: List.generate(
-                                  10, (index) => DateTime.now().year - index),
-                              itemBuilder: (year) => year.toString(),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedYear = value!;
-                                  _fetchSHIFData();
-                                });
-                              },
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildDropdown(
+                                label: 'Month',
+                                value: selectedMonth,
+                                items: List.generate(12, (index) => index + 1),
+                                itemBuilder: (month) => DateFormat('MMMM')
+                                    .format(DateTime(selectedYear, month)),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedMonth = value!;
+                                    _fetchSHIFData();
+                                  });
+                                },
+                              ),
                             ),
-                            _buildDropdown(
-                              value: selectedCompany ?? 'All Companies',
-                              items: _companyNames,
-                              itemBuilder: (company) => company,
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedCompany = value;
-                                  _fetchSHIFData();
-                                });
-                              },
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildDropdown(
+                                label: 'Year',
+                                value: selectedYear,
+                                items: List.generate(
+                                    10, (index) => DateTime.now().year - index),
+                                itemBuilder: (year) => year.toString(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedYear = value!;
+                                    _fetchSHIFData();
+                                  });
+                                },
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -435,13 +497,16 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
                 child: _isLoading
                     ? Center(
                         child:
-                            CircularProgressIndicator(color: Colors.teal[700]))
+                            CircularProgressIndicator(color: Colors.teal[700]),
+                      )
                     : _filteredEmployees.isEmpty
                         ? Center(
                             child: Text(
-                              'No SHIF data available for selected filters',
+                              'No SHIF data available for selected month/year',
                               style: TextStyle(
-                                  color: Colors.teal[900], fontSize: 16),
+                                color: Colors.teal[900],
+                                fontSize: 16,
+                              ),
                             ),
                           )
                         : Card(
@@ -468,74 +533,137 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
                                         Colors.teal[100]),
                                     columns: const [
                                       DataColumn(
-                                          label: Text('Employee ID',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'Employee ID',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('First Name',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'First Name',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('Last Name',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'Last Name',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('National ID',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'National ID',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('NHIF Number',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'NHIF Number',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('Amount',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'Amount',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                       DataColumn(
-                                          label: Text('Phone Number',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
+                                        label: Text(
+                                          'Phone Number',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
+                                      DataColumn(
+                                        label: Text(
+                                          'Company Name',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.teal,
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                     rows: _filteredEmployees.map((employee) {
-                                      final numberFormat =
-                                          NumberFormat('#,##0.00', 'en_US');
                                       return DataRow(
                                         cells: [
-                                          DataCell(Text(
+                                          DataCell(
+                                            Text(
                                               employee['employee_id'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               employee['first_name'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               employee['last_name'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               employee['national_id'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               employee['nhif_number'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               'KES ${numberFormat.format(double.tryParse(employee['amount']?.toString() ?? '0.0') ?? 0.0)}',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
                                               employee['phone_number'] ?? 'N/A',
                                               style: TextStyle(
-                                                  color: Colors.grey[800]))),
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
+                                          DataCell(
+                                            Text(
+                                              employee['company_name'] ?? 'N/A',
+                                              style: TextStyle(
+                                                  color: Colors.grey[800]),
+                                            ),
+                                          ),
                                         ],
                                       );
                                     }).toList(),
@@ -551,46 +679,141 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
                 padding: const EdgeInsets.all(16.0),
                 child: _isLoading
                     ? const SizedBox.shrink()
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            onPressed: _exportContributions,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
+                    : Card(
+                        elevation: 6,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        child: Container(
+                          padding: const EdgeInsets.all(16.0),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.white, Colors.teal[50]!],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                            child: const Text('Export Contributions'),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          ElevatedButton(
-                            onPressed: _exportDetailedReport,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export Detailed Report'),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isExporting
+                                      ? null
+                                      : () => _exportToCSV(
+                                            fileNamePrefix:
+                                                'shif_contributions',
+                                            headers: [
+                                              'Employee ID',
+                                              'NHIF Number',
+                                              'Amount'
+                                            ],
+                                            fields: [
+                                              'employee_id',
+                                              'nhif_number',
+                                              'amount'
+                                            ],
+                                          ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal[700],
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 15),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: _isExporting
+                                      ? const CircularProgressIndicator(
+                                          color: Colors.white)
+                                      : const Text('Export Contributions'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isExporting
+                                      ? null
+                                      : () => _exportToCSV(
+                                            fileNamePrefix:
+                                                'shif_detailed_report',
+                                            headers: [
+                                              'Employee ID',
+                                              'First Name',
+                                              'Last Name',
+                                              'National ID',
+                                              'NHIF Number',
+                                              'Amount',
+                                              'Phone Number',
+                                              'Company Name'
+                                            ],
+                                            fields: [
+                                              'employee_id',
+                                              'first_name',
+                                              'last_name',
+                                              'national_id',
+                                              'nhif_number',
+                                              'amount',
+                                              'phone_number',
+                                              'company_name'
+                                            ],
+                                          ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal[700],
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 15),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: _isExporting
+                                      ? const CircularProgressIndicator(
+                                          color: Colors.white)
+                                      : const Text('Export Detailed Report'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: _isExporting
+                                      ? null
+                                      : () => _exportToCSV(
+                                            fileNamePrefix: 'shif_export',
+                                            headers: [
+                                              'Employee ID',
+                                              'First Name',
+                                              'Last Name',
+                                              'National ID',
+                                              'NHIF Number',
+                                              'Amount',
+                                              'Phone Number'
+                                            ],
+                                            fields: [
+                                              'employee_id',
+                                              'first_name',
+                                              'last_name',
+                                              'national_id',
+                                              'nhif_number',
+                                              'amount',
+                                              'phone_number'
+                                            ],
+                                          ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal[700],
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 15),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: _isExporting
+                                      ? const CircularProgressIndicator(
+                                          color: Colors.white)
+                                      : const Text('Export to CSV'),
+                                ),
+                              ),
+                            ],
                           ),
-                          ElevatedButton(
-                            onPressed: _exportToCSV,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export to CSV'),
-                          ),
-                        ],
+                        ),
                       ),
               ),
             ),

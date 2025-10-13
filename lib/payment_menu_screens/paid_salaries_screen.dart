@@ -1,23 +1,31 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import '../models/user.dart';
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
 class PaidSalariesScreen extends StatefulWidget {
-  const PaidSalariesScreen({super.key});
+  final User user;
+  final ApiService apiService;
+  const PaidSalariesScreen({
+    Key? key,
+    required this.user,
+    required this.apiService,
+  }) : super(key: key);
 
   @override
   _PaidSalariesScreenState createState() => _PaidSalariesScreenState();
 }
 
 class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
-  final ApiService _apiService = ApiService(client: http.Client());
+  late final ApiService _apiService;
+  
   List<Map<String, dynamic>> _salaries = [];
   bool _isLoading = true;
-  String? _selectedCompany;
-  List<String> _companyNames = ['All Companies'];
+  List<String> _companyNames = [];
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   final TextEditingController _searchController = TextEditingController();
@@ -25,26 +33,27 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
   @override
   void initState() {
     super.initState();
+    _apiService = ApiService(
+      client: http.Client(),
+      user: widget.user,
+    );
     _fetchCompanies();
     _searchController.addListener(_fetchSalaries);
   }
 
   Future<void> _fetchCompanies() async {
     try {
-      final employees = await _apiService.getAllEmployees();
+      // Use widget.user.companyName directly to avoid unauthorized company data
       setState(() {
-        _companyNames = ['All Companies'] +
-            employees
-                .map((e) => e['company_name'] as String?)
-                .where((name) => name != null && name.isNotEmpty)
-                .toSet()
-                .cast<String>()
-                .toList();
+        _companyNames = [widget.user.companyName ?? 'Unknown'];
       });
+      if (kDebugMode) {
+        print('Company names set: $_companyNames');
+      }
       _fetchSalaries();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching companies: $e')),
+        SnackBar(content: Text('Error setting company: $e')),
       );
     }
   }
@@ -52,15 +61,16 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
   Future<void> _fetchSalaries() async {
     setState(() => _isLoading = true);
     try {
-      final salaries = await _apiService.getSalaries();
+      final salaries = await _apiService.getSalaries(widget.user.companyId);
+      if (kDebugMode) {
+        print('Fetched salaries: $salaries');
+      }
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         if (paymentDate == null) return false;
         final matchesMonth = paymentDate.month == _selectedMonth;
         final matchesYear = paymentDate.year == _selectedYear;
-        final matchesCompany = _selectedCompany == null ||
-            _selectedCompany == 'All Companies' ||
-            salary['company_name'] == _selectedCompany;
+        final matchesCompany = salary['company_name'] == widget.user.companyName;
         final matchesStatus = salary['status']?.toLowerCase() == 'paid';
         final searchText = _searchController.text.toLowerCase();
         final matchesSearch = searchText.isEmpty ||
@@ -139,53 +149,59 @@ class _PaidSalariesScreenState extends State<PaidSalariesScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _buildDropdown(
-                            value: _selectedMonth,
-                            items: List.generate(12, (index) => index + 1),
-                            itemBuilder: (month) => DateFormat('MMMM')
-                                .format(DateTime(_selectedYear, month)),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedMonth = value!;
-                                _fetchSalaries();
-                              });
-                            },
-                          ),
-                          _buildDropdown(
-                            value: _selectedYear,
-                            items: List.generate(
-                                10, (index) => DateTime.now().year - index),
-                            itemBuilder: (year) => year.toString(),
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedYear = value!;
-                                _fetchSalaries();
-                              });
-                            },
-                          ),
-                          _buildDropdown(
-                            value: _selectedCompany ?? 'All Companies',
-                            items: _companyNames,
-                            itemBuilder: (company) => company,
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedCompany = value;
-                                _fetchSalaries();
-                              });
-                            },
-                          ),
-                          ElevatedButton(
-                            onPressed: _fetchSalaries,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
+                          Expanded(
+                            child: _buildDropdown(
+                              value: _selectedMonth,
+                              items: List.generate(12, (index) => index + 1),
+                              itemBuilder: (month) => DateFormat('MMMM')
+                                  .format(DateTime(_selectedYear, month)),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedMonth = value!;
+                                  _fetchSalaries();
+                                });
+                              },
                             ),
-                            child: const Text('Refresh'),
+                          ),
+                          const SizedBox(width: 8.0),
+                          Expanded(
+                            child: _buildDropdown(
+                              value: _selectedYear,
+                              items: List.generate(
+                                  10, (index) => DateTime.now().year - index),
+                              itemBuilder: (year) => year.toString(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedYear = value!;
+                                  _fetchSalaries();
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8.0),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _fetchSalaries,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal[700],
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text('Refresh'),
+                            ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 8.0),
+                      Text(
+                        'Company: ${widget.user.companyName ?? 'Unknown'}',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.teal[900],
+                        ),
                       ),
                       const SizedBox(height: 16),
                       TextField(

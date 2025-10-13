@@ -1,29 +1,43 @@
 import 'dart:io';
 
-import 'package:csv/csv.dart'; // Add this package to pubspec.yaml
+import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
+// HousingLevyExport: Component for displaying and exporting Housing Levy data
 class HousingLevyExport {
   final String title = 'Housing Levy Export';
   final IconData icon = Icons.home;
-  final ApiService _apiService = ApiService(client: http.Client());
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+  final int? companyId; // Explicit company ID for restriction
 
+  HousingLevyExport({
+    required this.user,
+    required this.apiService,
+    this.companyId,
+  });
+
+  // Build Card: Creates a clickable card for the ExportsScreen
   Widget buildCard(BuildContext context) {
     return Card(
-      elevation: 6, // Match HomeScreen
+      elevation: 6,
       margin: const EdgeInsets.symmetric(vertical: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         leading: Icon(icon, color: Colors.teal[700]),
-        title: Text(title,
-            style: TextStyle(
-                color: Colors.teal[900], fontWeight: FontWeight.w500)),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: Colors.teal[900],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         trailing: Icon(Icons.file_download, color: Colors.teal[700]),
         onTap: () {
           Navigator.push(
@@ -35,64 +49,61 @@ class HousingLevyExport {
     );
   }
 
+  // Build Details Page: Creates the Housing Levy export details page
   Widget buildDetailsPage(BuildContext context) {
-    return _HousingLevyExportDetailsPage(apiService: _apiService);
-  }
-}
-
-class _HousingLevyExportDetailsPage extends StatefulWidget {
-  final ApiService apiService;
-
-  const _HousingLevyExportDetailsPage({required this.apiService});
-
-  @override
-  _HousingLevyExportDetailsPageState createState() =>
-      _HousingLevyExportDetailsPageState();
-}
-
-class _HousingLevyExportDetailsPageState
-    extends State<_HousingLevyExportDetailsPage> {
-  List<Map<String, dynamic>> _employees = [];
-  List<Map<String, dynamic>> _filteredEmployees = [];
-  List<String> _companyNames = ['All Companies'];
-  bool _isLoading = true;
-  int selectedMonth = DateTime.now().month;
-  int selectedYear = DateTime.now().year;
-  String? selectedCompany;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchHousingLevyData();
+    return _HousingLevyExportDetailsPage(
+      apiService: apiService,
+      user: user,
+      companyId: companyId,
+    );
   }
 
-  Future<void> _fetchHousingLevyData() async {
-    setState(() => _isLoading = true);
+  // Export: Generates a full Housing Levy CSV for the current month/year
+  Future<String> export() async {
+    if (companyId == null) {
+      throw Exception('No company ID provided for export');
+    }
+    final companyName = user['company_name']?.toString() ?? 'Unknown';
+    final month = DateTime.now().month;
+    final year = DateTime.now().year;
+    final employees = await _fetchHousingLevyDataForExport(
+      apiService: apiService,
+      companyId: companyId!,
+      month: month,
+      year: year,
+      companyName: companyName,
+    );
+    return await _exportHousingLevyToCSV(
+      employees: employees,
+      exportType: 'full',
+      companyName: companyName,
+      year: year,
+      month: month,
+    );
+  }
+
+  // Fetch Housing Levy Data for Export: Retrieves and filters employee and salary data
+  static Future<List<Map<String, dynamic>>> _fetchHousingLevyDataForExport({
+    required ApiService apiService,
+    required int companyId,
+    required int month,
+    required int year,
+    required String companyName,
+  }) async {
     try {
-      final employees = await widget.apiService.getEmployeeList();
-      final salaries = await widget.apiService.getSalaries();
-
-      final companyNames = ['All Companies'] +
-          employees
-              .map((e) => e['company_name'] as String?)
-              .where((name) => name != null && name.isNotEmpty)
-              .toSet()
-              .cast<String>()
-              .toList();
+      final employees = await apiService.getEmployeeList(companyId);
+      final salaries = await apiService.getSalaries(companyId);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         final matchesMonthYear = paymentDate != null &&
-            paymentDate.month == selectedMonth &&
-            paymentDate.year == selectedYear;
-        final matchesCompany = selectedCompany == null ||
-            selectedCompany == 'All Companies' ||
-            salary['company_name'] == selectedCompany;
+            paymentDate.month == month &&
+            paymentDate.year == year;
         final hasHousingLevy =
             (double.tryParse(salary['housing_levy']?.toString() ?? '0.0') ??
                     0.0) >
                 0;
-        return matchesMonthYear && matchesCompany && hasHousingLevy;
+        return matchesMonthYear && hasHousingLevy;
       }).toList();
 
       final housingLevyEmployeeIds = filteredSalaries
@@ -111,179 +122,296 @@ class _HousingLevyExportDetailsPageState
         return {
           'employee_id': employee['employee_id'] ?? 'N/A',
           'fullname': employee['fullname'] ?? 'N/A',
-          'company_name': employee['company_name'] ?? 'N/A',
+          'company_id': employee['company_id'] ?? companyId,
+          'company_name': employee['company_name']?.toString() ?? companyName,
           'national_id': employee['national_id'] ?? 'N/A',
           'kra_pin': employee['kra_pin'] ?? 'N/A',
-          'gross_pay': salary['gross_pay'] ?? '0.0',
-          'housing_levy':
-              salary['housing_levy'] ?? '0.0', // Include housing levy amount
+          'gross_pay': salary['gross_pay']?.toString() ?? '0.0',
+          'housing_levy': salary['housing_levy']?.toString() ?? '0.0',
+        };
+      }).toList();
+
+      if (kDebugMode) {
+        print(
+            'Fetched Housing Levy data for export: $companyName ($companyId)');
+        print('Filtered employees: ${filteredEmployees.length}');
+      }
+
+      return filteredEmployees;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error fetching Housing Levy data for export: $e');
+      }
+      throw Exception('Failed to load Housing Levy data: $e');
+    }
+  }
+
+  // Export Housing Levy to CSV: Generates CSV for Housing Levy data
+  static Future<String> _exportHousingLevyToCSV({
+    required List<Map<String, dynamic>> employees,
+    required String exportType,
+    required String companyName,
+    required int year,
+    required int month,
+  }) async {
+    if (employees.isEmpty) {
+      throw Exception('No data available to export');
+    }
+
+    try {
+      List<List<dynamic>> rows;
+      String fileName;
+
+      final numberFormat = NumberFormat('#,##0.00', 'en_US');
+      final monthYear = DateFormat('MMM_yyyy').format(DateTime(year, month));
+      final sanitizedCompanyName = companyName.replaceAll(' ', '_');
+
+      if (exportType == 'summary') {
+        final totalHousingLevy = employees.fold<double>(
+            0.0,
+            (sum, employee) =>
+                sum +
+                (double.tryParse(
+                        employee['housing_levy']?.toString() ?? '0.0') ??
+                    0.0));
+        final totalGrossPay = employees.fold<double>(
+            0.0,
+            (sum, employee) =>
+                sum +
+                (double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ??
+                    0.0));
+
+        rows = [
+          ['Total Employees', 'Total Gross Pay', 'Total Housing Levy'],
+          [
+            employees.length,
+            numberFormat.format(totalGrossPay),
+            numberFormat.format(totalHousingLevy),
+          ],
+        ];
+        fileName =
+            'housing_levy_summary_${sanitizedCompanyName}_$monthYear.csv';
+      } else {
+        rows = [
+          [
+            'National ID',
+            'Name',
+            'KRA PIN',
+            if (exportType == 'full') 'Gross Pay',
+            'Housing Levy Amount'
+          ],
+          ...employees.map((employee) => [
+                employee['national_id'] ?? 'N/A',
+                employee['fullname'] ?? 'N/A',
+                employee['kra_pin'] ?? 'N/A',
+                if (exportType == 'full')
+                  numberFormat.format(double.tryParse(
+                          employee['gross_pay']?.toString() ?? '0.0') ??
+                      0.0),
+                numberFormat.format(double.tryParse(
+                        employee['housing_levy']?.toString() ?? '0.0') ??
+                    0.0),
+              ]),
+        ];
+        fileName = exportType == 'contributions'
+            ? 'housing_levy_contributions_${sanitizedCompanyName}_$monthYear.csv'
+            : 'housing_levy_export_${sanitizedCompanyName}_$monthYear.csv';
+      }
+
+      final csv = const ListToCsvConverter().convert(rows);
+      final directory = await getTemporaryDirectory();
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+
+      await file.writeAsString(csv);
+
+      return filePath;
+    } catch (e) {
+      throw Exception('Failed to export: $e');
+    }
+  }
+}
+
+class _HousingLevyExportDetailsPage extends StatefulWidget {
+  final ApiService apiService;
+  final Map<String, dynamic> user;
+  final int? companyId;
+
+  const _HousingLevyExportDetailsPage({
+    required this.apiService,
+    required this.user,
+    this.companyId,
+  });
+
+  @override
+  _HousingLevyExportDetailsPageState createState() =>
+      _HousingLevyExportDetailsPageState();
+}
+
+class _HousingLevyExportDetailsPageState
+    extends State<_HousingLevyExportDetailsPage> {
+  List<Map<String, dynamic>> _employees = [];
+  List<Map<String, dynamic>> _filteredEmployees = [];
+  bool _isLoading = true;
+  bool _isExporting = false;
+  String? _errorMessage;
+  int selectedMonth = DateTime.now().month;
+  int selectedYear = DateTime.now().year;
+  String searchKeyword = '';
+  late int effectiveCompanyId;
+  late String companyName;
+
+  @override
+  void initState() {
+    super.initState();
+    // Validate company ID
+    effectiveCompanyId = widget.companyId ??
+        (widget.user['company_id'] != null
+            ? int.tryParse(widget.user['company_id'].toString()) ?? 0
+            : 0);
+    companyName = widget.user['company_name']?.toString() ?? 'Unknown';
+    if (effectiveCompanyId == 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Access denied: No valid company ID')),
+        );
+        Navigator.pop(context);
+      });
+      return;
+    }
+    _fetchHousingLevyData();
+  }
+
+  // Fetch Housing Levy Data: Retrieves and filters employee and salary data
+  Future<void> _fetchHousingLevyData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final employees =
+          await widget.apiService.getEmployeeList(effectiveCompanyId);
+      final salaries = await widget.apiService.getSalaries(effectiveCompanyId);
+
+      final filteredSalaries = salaries.where((salary) {
+        final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
+        final matchesMonthYear = paymentDate != null &&
+            paymentDate.month == selectedMonth &&
+            paymentDate.year == selectedYear;
+        final hasHousingLevy =
+            (double.tryParse(salary['housing_levy']?.toString() ?? '0.0') ??
+                    0.0) >
+                0;
+        return matchesMonthYear && hasHousingLevy;
+      }).toList();
+
+      final housingLevyEmployeeIds = filteredSalaries
+          .map((salary) => salary['employee_id'].toString())
+          .toSet();
+
+      final filteredEmployees = employees.where((employee) {
+        final matchesSearch = searchKeyword.isEmpty ||
+            (employee['fullname'] ?? '').toLowerCase().contains(searchKeyword);
+        return housingLevyEmployeeIds
+                .contains(employee['employee_id'].toString()) &&
+            matchesSearch;
+      }).map((employee) {
+        final salary = filteredSalaries.firstWhere(
+          (s) =>
+              s['employee_id'].toString() == employee['employee_id'].toString(),
+          orElse: () => {},
+        );
+        return {
+          'employee_id': employee['employee_id'] ?? 'N/A',
+          'fullname': employee['fullname'] ?? 'N/A',
+          'company_id': employee['company_id'] ?? effectiveCompanyId,
+          'company_name': employee['company_name']?.toString() ?? companyName,
+          'national_id': employee['national_id'] ?? 'N/A',
+          'kra_pin': employee['kra_pin'] ?? 'N/A',
+          'gross_pay': salary['gross_pay']?.toString() ?? '0.0',
+          'housing_levy': salary['housing_levy']?.toString() ?? '0.0',
         };
       }).toList();
 
       setState(() {
         _employees = employees;
         _filteredEmployees = filteredEmployees;
-        _companyNames = companyNames;
-        selectedCompany ??= 'All Companies';
         _isLoading = false;
       });
+
+      if (kDebugMode) {
+        print(
+            'Fetched Housing Levy data for company: $companyName ($effectiveCompanyId)');
+        print('Filtered employees: ${filteredEmployees.length}');
+      }
     } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load Housing Levy data: $e')),
-      );
+      setState(() {
+        _errorMessage = 'Failed to load Housing Levy data: $e';
+        _isLoading = false;
+      });
+      if (kDebugMode) {
+        print('Error fetching Housing Levy data: $e');
+      }
     }
   }
 
-  Future<void> _exportContributions() async {
+  // Export to CSV: Exports Housing Levy data with customizable fields
+  Future<String> _exportToCSV(String exportType) async {
     if (_filteredEmployees.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No data available to export')),
       );
-      return;
+      return '';
     }
 
+    setState(() => _isExporting = true);
+
     try {
-      final List<List<dynamic>> rows = [
-        ['National ID', 'Name', 'KRA PIN', 'Housing Levy Amount'],
-        ..._filteredEmployees.map((employee) {
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['national_id'] ?? 'N/A',
-            employee['fullname'] ?? 'N/A',
-            employee['kra_pin'] ?? 'N/A',
-            numberFormat.format(double.tryParse(
-                    employee['housing_levy']?.toString() ?? '0.0') ??
-                0.0),
-          ];
-        }),
-      ];
-
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath =
-          '${directory.path}/housing_levy_contributions_$monthYear.csv';
-      final file = File(filePath);
-
-      await file.writeAsString(csv);
+      final filePath = await HousingLevyExport._exportHousingLevyToCSV(
+        employees: _filteredEmployees,
+        exportType: exportType,
+        companyName: companyName,
+        year: selectedYear,
+        month: selectedMonth,
+      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Housing Levy Contributions exported to $filePath'),
+          content: Text('Exported to $filePath'),
           backgroundColor: Colors.teal[700],
         ),
       );
+      return filePath;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export contributions: $e')),
-      );
-    }
-  }
-
-  Future<void> _exportSummary() async {
-    if (_filteredEmployees.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No data available to export')),
-      );
-      return;
-    }
-
-    try {
-      final totalHousingLevy = _filteredEmployees.fold<double>(
-          0.0,
-          (sum, employee) =>
-              sum +
-              (double.tryParse(employee['housing_levy']?.toString() ?? '0.0') ??
-                  0.0));
-      final totalGrossPay = _filteredEmployees.fold<double>(
-          0.0,
-          (sum, employee) =>
-              sum +
-              (double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ??
-                  0.0));
-
-      final List<List<dynamic>> rows = [
-        ['Total Employees', 'Total Gross Pay', 'Total Housing Levy'],
-        [
-          _filteredEmployees.length,
-          NumberFormat('#,##0.00', 'en_US').format(totalGrossPay),
-          NumberFormat('#,##0.00', 'en_US').format(totalHousingLevy),
-        ],
-      ];
-
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/housing_levy_summary_$monthYear.csv';
-      final file = File(filePath);
-
-      await file.writeAsString(csv);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Housing Levy Summary exported to $filePath'),
-          backgroundColor: Colors.teal[700],
+          content: Text('Failed to export: $e'),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _exportToCSV(exportType),
+          ),
         ),
       );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export summary: $e')),
-      );
+      return '';
+    } finally {
+      setState(() => _isExporting = false);
     }
   }
 
-  Future<void> _exportToCSV() async {
-    if (_filteredEmployees.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No data available to export')),
-      );
-      return;
-    }
-
-    try {
-      final List<List<dynamic>> rows = [
-        ['National ID', 'Name', 'KRA PIN', 'Gross Pay', 'Housing Levy Amount'],
-        ..._filteredEmployees.map((employee) {
-          final numberFormat = NumberFormat('#,##0.00', 'en_US');
-          return [
-            employee['national_id'] ?? 'N/A',
-            employee['fullname'] ?? 'N/A',
-            employee['kra_pin'] ?? 'N/A',
-            numberFormat.format(
-                double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ??
-                    0.0),
-            numberFormat.format(double.tryParse(
-                    employee['housing_levy']?.toString() ?? '0.0') ??
-                0.0),
-          ];
-        }),
-      ];
-
-      String csv = const ListToCsvConverter().convert(rows);
-      final directory = await getApplicationDocumentsDirectory();
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filePath = '${directory.path}/housing_levy_export_$monthYear.csv';
-      final file = File(filePath);
-
-      await file.writeAsString(csv);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Housing Levy data exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export to CSV: $e')),
-      );
-    }
+  // Filter Employees by Search Keyword
+  void _filterEmployees(String keyword) {
+    setState(() {
+      searchKeyword = keyword.toLowerCase();
+      _filteredEmployees = _employees.where((employee) {
+        return (employee['fullname'] ?? '')
+            .toLowerCase()
+            .contains(searchKeyword);
+      }).toList();
+    });
   }
 
+  // Build Dropdown: Creates a styled dropdown widget
   Widget _buildDropdown<T>({
     required T value,
     required List<T> items,
@@ -323,10 +451,14 @@ class _HousingLevyExportDetailsPageState
         title: 'Housing Levy Export',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          print('Profile tapped');
+          if (kDebugMode) {
+            print('Profile tapped');
+          }
         },
       ),
       body: Container(
@@ -337,90 +469,150 @@ class _HousingLevyExportDetailsPageState
             end: Alignment.bottomCenter,
           ),
         ),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Card(
-                      elevation: 6,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Container(
-                        padding: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.white, Colors.teal[50]!],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+        child: _isLoading
+            ? Center(child: CircularProgressIndicator(color: Colors.teal[700]))
+            : _errorMessage != null
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          _errorMessage!,
+                          style:
+                              TextStyle(color: Colors.teal[900], fontSize: 16),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _fetchHousingLevyData,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.teal[700],
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          child: const Text('Retry'),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            _buildDropdown(
-                              value: selectedMonth,
-                              items: List.generate(12, (index) => index + 1),
-                              itemBuilder: (month) => DateFormat('MMMM')
-                                  .format(DateTime(selectedYear, month)),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedMonth = value!;
-                                  _fetchHousingLevyData();
-                                });
-                              },
-                            ),
-                            _buildDropdown(
-                              value: selectedYear,
-                              items: List.generate(
-                                  10, (index) => DateTime.now().year - index),
-                              itemBuilder: (year) => year.toString(),
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedYear = value!;
-                                  _fetchHousingLevyData();
-                                });
-                              },
-                            ),
-                            _buildDropdown(
-                              value: selectedCompany ?? 'All Companies',
-                              items: _companyNames,
-                              itemBuilder: (company) => company,
-                              onChanged: (value) {
-                                setState(() {
-                                  selectedCompany = value;
-                                  _fetchHousingLevyData();
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-            SliverFillRemaining(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: _isLoading
-                    ? Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.teal[700]))
-                    : _filteredEmployees.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No Housing Levy data available for selected filters',
-                              style: TextStyle(
-                                  color: Colors.teal[900], fontSize: 16),
+                  )
+                : SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Card(
+                            elevation: 6,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            child: Container(
+                              padding: const EdgeInsets.all(16.0),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.white, Colors.teal[50]!],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Flexible(
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            border: Border.all(
+                                                color: Colors.teal[200]!),
+                                          ),
+                                          child: Text(
+                                            companyName,
+                                            style: TextStyle(
+                                              color: Colors.teal[900],
+                                              fontSize: 14,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: _buildDropdown(
+                                          value: selectedMonth,
+                                          items: List.generate(
+                                              12, (index) => index + 1),
+                                          itemBuilder: (month) =>
+                                              DateFormat('MMMM').format(
+                                                  DateTime(
+                                                      selectedYear, month)),
+                                          onChanged: (value) {
+                                            setState(() {
+                                              selectedMonth = value!;
+                                              _fetchHousingLevyData();
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: _buildDropdown(
+                                          value: selectedYear,
+                                          items: List.generate(
+                                              10,
+                                              (index) =>
+                                                  DateTime.now().year - index),
+                                          itemBuilder: (year) =>
+                                              year.toString(),
+                                          onChanged: (value) {
+                                            setState(() {
+                                              selectedYear = value!;
+                                              _fetchHousingLevyData();
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    decoration: InputDecoration(
+                                      hintText: 'Search by Employee Name',
+                                      prefixIcon: Icon(Icons.search,
+                                          color: Colors.teal[700]),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[200]!)),
+                                      enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[200]!)),
+                                      focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          borderSide: BorderSide(
+                                              color: Colors.teal[700]!)),
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                    ),
+                                    onChanged: _filterEmployees,
+                                    style: TextStyle(color: Colors.grey[800]),
+                                  ),
+                                ],
+                              ),
                             ),
-                          )
-                        : Card(
+                          ),
+                          const SizedBox(height: 16),
+                          Card(
                             elevation: 6,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
@@ -433,127 +625,194 @@ class _HousingLevyExportDetailsPageState
                                 ),
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.vertical,
-                                  child: DataTable(
-                                    columnSpacing: 16,
-                                    dataRowHeight: 60,
-                                    headingRowColor: MaterialStateProperty.all(
-                                        Colors.teal[100]),
-                                    columns: const [
-                                      DataColumn(
-                                          label: Text('National ID',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Name',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('KRA PIN',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Gross Pay',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                      DataColumn(
-                                          label: Text('Housing Levy',
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Colors.teal))),
-                                    ],
-                                    rows: _filteredEmployees.map((employee) {
-                                      final numberFormat =
-                                          NumberFormat('#,##0.00', 'en_US');
-                                      return DataRow(
-                                        cells: [
-                                          DataCell(Text(
-                                              employee['national_id'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              employee['fullname'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              employee['kra_pin'] ?? 'N/A',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              'KES ${numberFormat.format(double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ?? 0.0)}',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                          DataCell(Text(
-                                              'KES ${numberFormat.format(double.tryParse(employee['housing_levy']?.toString() ?? '0.0') ?? 0.0)}',
-                                              style: TextStyle(
-                                                  color: Colors.grey[800]))),
-                                        ],
-                                      );
-                                    }).toList(),
+                              child: _filteredEmployees.isEmpty
+                                  ? Center(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Text(
+                                          'No Housing Levy data available for selected filters',
+                                          style: TextStyle(
+                                              color: Colors.teal[900],
+                                              fontSize: 16),
+                                        ),
+                                      ),
+                                    )
+                                  : SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.vertical,
+                                        child: DataTable(
+                                          columnSpacing: 16,
+                                          dataRowHeight: 60,
+                                          headingRowColor:
+                                              MaterialStateProperty.all(
+                                                  Colors.teal[100]),
+                                          columns: const [
+                                            DataColumn(
+                                                label: Text('National ID',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.teal))),
+                                            DataColumn(
+                                                label: Text('Name',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.teal))),
+                                            DataColumn(
+                                                label: Text('KRA PIN',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.teal))),
+                                            DataColumn(
+                                                label: Text('Gross Pay',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.teal))),
+                                            DataColumn(
+                                                label: Text('Housing Levy',
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: Colors.teal))),
+                                          ],
+                                          rows: _filteredEmployees
+                                              .map((employee) {
+                                            final numberFormat = NumberFormat(
+                                                '#,##0.00', 'en_US');
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(Text(
+                                                    employee['national_id'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    employee['fullname'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    employee['kra_pin'] ??
+                                                        'N/A',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    'KES ${numberFormat.format(double.tryParse(employee['gross_pay']?.toString() ?? '0.0') ?? 0.0)}',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                                DataCell(Text(
+                                                    'KES ${numberFormat.format(double.tryParse(employee['housing_levy']?.toString() ?? '0.0') ?? 0.0)}',
+                                                    style: TextStyle(
+                                                        color:
+                                                            Colors.grey[800]))),
+                                              ],
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (_filteredEmployees.isNotEmpty)
+                            Card(
+                              elevation: 6,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              child: Container(
+                                padding: const EdgeInsets.all(16.0),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [Colors.white, Colors.teal[50]!],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _isExporting
+                                            ? null
+                                            : () =>
+                                                _exportToCSV('contributions'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.teal[700],
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 15),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                        ),
+                                        child: _isExporting
+                                            ? const CircularProgressIndicator(
+                                                color: Colors.white)
+                                            : const Text(
+                                                'Export Contributions'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _isExporting
+                                            ? null
+                                            : () => _exportToCSV('summary'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.teal[700],
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 15),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                        ),
+                                        child: _isExporting
+                                            ? const CircularProgressIndicator(
+                                                color: Colors.white)
+                                            : const Text('Export Summary'),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        onPressed: _isExporting
+                                            ? null
+                                            : () => _exportToCSV('full'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.teal[700],
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 15),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8)),
+                                        ),
+                                        child: _isExporting
+                                            ? const CircularProgressIndicator(
+                                                color: Colors.white)
+                                            : const Text('Export to CSV'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                          ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: _isLoading
-                    ? const SizedBox.shrink()
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton(
-                            onPressed: _exportContributions,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export Contributions'),
-                          ),
-                          ElevatedButton(
-                            onPressed: _exportSummary,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export Summary'),
-                          ),
-                          ElevatedButton(
-                            onPressed: _exportToCSV,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: const Text('Export to CSV'),
-                          ),
                         ],
                       ),
-              ),
-            ),
-          ],
-        ),
+                    ),
+                  ),
       ),
     );
   }

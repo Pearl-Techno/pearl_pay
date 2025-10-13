@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
 class ContactSupportScreen extends StatefulWidget {
-  const ContactSupportScreen({super.key});
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const ContactSupportScreen({
+    super.key,
+    required this.user,
+    required this.apiService,
+  });
 
   @override
   _ContactSupportScreenState createState() => _ContactSupportScreenState();
@@ -14,6 +23,16 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
+  bool _isSubmitting = false;
+  final int _maxMessageLength = 500;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill form with user data
+    _nameController.text = widget.user['fullname']?.toString() ?? '';
+    _emailController.text = widget.user['email']?.toString() ?? '';
+  }
 
   @override
   void dispose() {
@@ -23,17 +42,60 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
     super.dispose();
   }
 
-  void _submitForm() {
-    if (_formKey.currentState!.validate()) {
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      // Example API call (replace with actual endpoint)
+      await widget.apiService.sendSupportMessage({
+        'name': _nameController.text,
+        'email': _emailController.text,
+        'message': _messageController.text,
+        'company_id': widget.user['company_id']?.toString() ?? 'N/A',
+        'user_id': widget.user['id']?.toString() ?? 'N/A',
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Message Sent'),
+          content: const Text('Message sent successfully'),
           backgroundColor: Colors.teal[700],
+          duration: const Duration(seconds: 2),
         ),
       );
       _nameController.clear();
       _emailController.clear();
       _messageController.clear();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send message: $e'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _submitForm,
+          ),
+        ),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not launch $url'),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -68,13 +130,13 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                   'Get Assistance',
                   style: TextStyle(
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w600,
                     color: Colors.teal[900],
                   ),
                 ),
                 const SizedBox(height: 16),
                 Card(
-                  elevation: 4,
+                  elevation: 6,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: Container(
@@ -183,8 +245,11 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                               ),
                               filled: true,
                               fillColor: Colors.white,
+                              counterText:
+                                  '${_messageController.text.length}/$_maxMessageLength',
                             ),
                             maxLines: 4,
+                            maxLength: _maxMessageLength,
                             validator: (value) {
                               if (value == null || value.isEmpty) {
                                 return 'Please enter your message';
@@ -197,7 +262,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _submitForm,
+                              onPressed: _isSubmitting ? null : _submitForm,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.teal[700],
                                 foregroundColor: Colors.white,
@@ -207,10 +272,13 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
-                              child: const Text(
-                                'Send',
-                                style: TextStyle(fontSize: 16),
-                              ),
+                              child: _isSubmitting
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white)
+                                  : const Text(
+                                      'Send',
+                                      style: TextStyle(fontSize: 16),
+                                    ),
                             ),
                           ),
                         ],
@@ -220,7 +288,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                 ),
                 const SizedBox(height: 24),
                 Card(
-                  elevation: 4,
+                  elevation: 6,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                   child: Container(
@@ -240,7 +308,7 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                           'Support Contact',
                           style: TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
                             color: Colors.teal[900],
                           ),
                         ),
@@ -253,34 +321,43 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.phone,
-                                color: Colors.teal[700], size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'WhatsApp/Call: +254 788330998',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[800],
+                        GestureDetector(
+                          onTap: () => _launchUrl('tel:+254788330998'),
+                          child: Row(
+                            children: [
+                              Icon(Icons.phone,
+                                  color: Colors.teal[700], size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'WhatsApp/Call: +254 788330998',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.teal[700],
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.email,
-                                color: Colors.teal[700], size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Email: mu.wesonga@gmail.com',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey[800],
+                        GestureDetector(
+                          onTap: () =>
+                              _launchUrl('mailto:mu.wesonga@gmail.com'),
+                          child: Row(
+                            children: [
+                              Icon(Icons.email,
+                                  color: Colors.teal[700], size: 20),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Email: mu.wesonga@gmail.com',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.teal[700],
+                                  decoration: TextDecoration.underline,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ],
                     ),

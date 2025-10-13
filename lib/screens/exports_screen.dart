@@ -1,32 +1,129 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../exports/housing_levy_export.dart';
 import '../exports/nssf_export.dart';
 import '../exports/paye_export.dart';
 import '../exports/shif_export.dart';
+import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
+import 'login_screen.dart';
 
 class ExportsScreen extends StatelessWidget {
-  const ExportsScreen({super.key});
+  final Map<String, dynamic> user;
+  final ApiService apiService;
+
+  const ExportsScreen({
+    Key? key,
+    required this.user,
+    required this.apiService,
+  }) : super(key: key);
+
+  // Logout function to clear SharedPreferences and navigate to LoginScreen
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final nssfExport = NSSFExport();
-    final shifExport = SHIFExport();
-    final housingLevyExport = HousingLevyExport();
-    final payeExport = PAYEExport();
+    // Validate user data
+    final userCompanyId = user['company_id'] != null
+        ? int.tryParse(user['company_id'].toString())
+        : null;
+    final userCompanyName = user['company_name']?.toString() ?? 'Unknown';
+    final isAdmin = user['role'] == 'admin';
+
+    if (userCompanyId == null || user['role'] == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('User data is incomplete (missing company ID or role)')),
+        );
+      });
+    }
+
+    // Initialize export classes with user, apiService, and company_id
+    final nssfExport = NSSFExport(
+      user: user,
+      apiService: apiService,
+      companyId: userCompanyId,
+    );
+    final shifExport = SHIFExport(
+      user: user,
+      apiService: apiService,
+      companyId: userCompanyId,
+    );
+    final housingLevyExport = HousingLevyExport(
+      user: user,
+      apiService: apiService,
+      companyId: userCompanyId,
+    );
+    final payeExport = PAYEExport(
+      user: user,
+      apiService: apiService,
+      companyId: userCompanyId,
+    );
 
     return Scaffold(
       appBar: CustomAppBar(
         title: 'Exports',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          // Add your notification handling logic here
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          // Add your profile handling logic here
-          print('Profile tapped');
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.person, color: Colors.teal[700]),
+                    title: Text('Profile: ${user['username'] ?? 'Unknown'}'),
+                    subtitle: Text('Role: ${user['role'] ?? 'Unknown'}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout, color: Colors.red[700]),
+                    title: const Text('Logout'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _logout(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
       body: Container(
@@ -45,10 +142,51 @@ class ExportsScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Colors.white, Colors.teal[50]!],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.teal[200]!),
+                                ),
+                                child: Text(
+                                  userCompanyName,
+                                  style: TextStyle(
+                                    color: Colors.teal[900],
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       'Export Options',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.teal[900],
                       ),
@@ -56,7 +194,7 @@ class ExportsScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     // First row with 2 tiles
                     SizedBox(
-                      height: 110,
+                      height: 120,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -64,21 +202,23 @@ class ExportsScreen extends StatelessWidget {
                             context,
                             icon: Icons.file_download,
                             title: 'NSSF Export',
-                            subtitle: 'Export NSSF data',
-                            exportWidget: nssfExport.buildCard(context),
-                            backgroundColor: Colors.blue[50]!,
-                            iconColor: Colors.blue[500]!,
+                            subtitle: 'Export NSSF contributions',
+                            exportInstance: nssfExport,
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin && userCompanyId != null,
                           ),
                           _buildExportTile(
                             context,
                             icon: Icons.file_download,
                             title: 'SHIF Export',
-                            subtitle: 'Export SHIF data',
-                            exportWidget: shifExport.buildCard(context),
-                            backgroundColor: Colors.green[50]!,
-                            iconColor: Colors.green[500]!,
+                            subtitle: 'Export SHIF contributions',
+                            exportInstance: shifExport,
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin && userCompanyId != null,
                           ),
                         ],
                       ),
@@ -86,7 +226,7 @@ class ExportsScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     // Second row with 2 tiles
                     SizedBox(
-                      height: 110,
+                      height: 120,
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -94,21 +234,23 @@ class ExportsScreen extends StatelessWidget {
                             context,
                             icon: Icons.file_download,
                             title: 'Housing Levy',
-                            subtitle: 'Export levy data',
-                            exportWidget: housingLevyExport.buildCard(context),
-                            backgroundColor: Colors.yellow[50]!,
-                            iconColor: Colors.yellow[700]!,
+                            subtitle: 'Export housing levy data',
+                            exportInstance: housingLevyExport,
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin && userCompanyId != null,
                           ),
                           _buildExportTile(
                             context,
                             icon: Icons.file_download,
                             title: 'PAYE Export',
                             subtitle: 'Export PAYE data',
-                            exportWidget: payeExport.buildCard(context),
-                            backgroundColor: Colors.orange[50]!,
-                            iconColor: Colors.orange[500]!,
+                            exportInstance: payeExport,
+                            backgroundColor: Colors.teal[50]!,
+                            iconColor: Colors.teal[700]!,
                             tileCount: 2,
+                            enabled: isAdmin && userCompanyId != null,
                           ),
                         ],
                       ),
@@ -128,10 +270,11 @@ class ExportsScreen extends StatelessWidget {
     required IconData icon,
     required String title,
     required String subtitle,
-    required Widget exportWidget, // Widget from buildCard
+    required dynamic exportInstance, // NSSFExport, SHIFExport, etc.
     required Color backgroundColor,
     required Color iconColor,
     required int tileCount,
+    bool enabled = true,
   }) {
     final screenWidth = MediaQuery.of(context).size.width;
     const horizontalPadding = 32.0; // 16 on each side
@@ -140,33 +283,44 @@ class ExportsScreen extends StatelessWidget {
         (screenWidth - horizontalPadding - spacingBetweenTiles) / tileCount;
 
     return Card(
-      elevation: 6,
+      elevation: enabled ? 6 : 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      shadowColor: Colors.grey.withOpacity(0.3),
+      shadowColor: Colors.grey.withOpacity(enabled ? 0.3 : 0.1),
       child: InkWell(
-        onTap: () {
-          // Optionally navigate to a detailed view or trigger export action
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              content: exportWidget,
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close'),
-                ),
-              ],
-            ),
-          );
-        },
+        onTap: enabled
+            ? () {
+                if (kDebugMode) {
+                  print('Navigating to $title details page');
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        exportInstance.buildDetailsPage(context),
+                  ),
+                );
+              }
+            : () {
+                if (kDebugMode) {
+                  print('Export tile disabled: $title');
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text(
+                          'Navigation disabled: Admin access required or invalid company ID')),
+                );
+              },
         borderRadius: BorderRadius.circular(12),
         child: Container(
           width: tileWidth,
-          height: 100,
+          height: 110,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.white, backgroundColor],
+              colors: [
+                enabled ? Colors.white : Colors.grey[200]!,
+                enabled ? backgroundColor : Colors.grey[300]!
+              ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -175,25 +329,26 @@ class ExportsScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 24, color: iconColor),
-              const SizedBox(height: 6),
+              Icon(icon,
+                  size: 28, color: enabled ? iconColor : Colors.grey[400]),
+              const SizedBox(height: 8),
               Text(
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.teal[900],
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? Colors.teal[900] : Colors.grey[600],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey[700],
+                  fontSize: 12,
+                  color: enabled ? Colors.grey[700] : Colors.grey[500],
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
