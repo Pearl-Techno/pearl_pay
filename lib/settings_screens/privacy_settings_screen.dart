@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class PrivacySettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const PrivacySettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _PrivacySettingsScreenState createState() => _PrivacySettingsScreenState();
+  State<PrivacySettingsScreen> createState() => _PrivacySettingsScreenState();
 }
 
 class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
@@ -74,12 +75,12 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
         throw Exception('User data is incomplete (missing ID or role)');
       }
 
-      final preferences = {
-        'user_id': widget.user['id'].toString(),
-        'share_data': _shareData,
-        'allow_tracking': _allowTracking,
-        'share_location': _shareLocation,
-      };
+      // final preferences = {
+      //   'user_id': widget.user['id'].toString(),
+      //   'share_data': _shareData,
+      //   'allow_tracking': _allowTracking,
+      //   'share_location': _shareLocation,
+      // };
 
      // await widget.apiService.updatePrivacyPreferences(preferences);
 
@@ -107,7 +108,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -128,6 +129,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -142,7 +144,9 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
         title: 'Privacy Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -162,7 +166,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],
@@ -233,7 +237,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                                     _shareData = value;
                                   });
                                 },
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),
                               ),
@@ -252,7 +256,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                                     _allowTracking = value;
                                   });
                                 },
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),
                               ),
@@ -271,7 +275,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                                     _shareLocation = value;
                                   });
                                 },
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),
                               ),

@@ -115,7 +115,6 @@ class _SHIFExportDetailsPage extends StatefulWidget {
 }
 
 class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
-  List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _filteredEmployees = [];
   bool _isLoading = true;
   bool _isExporting = false;
@@ -165,7 +164,7 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
     try {
       final companyId = _userModel.companyId;
       final employees = await widget.apiService.getEmployeeList(companyId);
-      final salaries = await widget.apiService.getSalaries(companyId);
+      final salaries = await widget.apiService.getSalaries(companyId, month: selectedMonth, year: selectedYear);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
@@ -208,7 +207,6 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
       }).toList();
 
       setState(() {
-        _employees = employees;
         _filteredEmployees = filteredEmployees;
         _isLoading = false;
       });
@@ -259,42 +257,56 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
       ];
 
       final csv = const ListToCsvConverter().convert(rows);
-      final directory = await getTemporaryDirectory();
       final monthYear = DateFormat('MMM_yyyy')
           .format(DateTime(selectedYear, selectedMonth))
           .replaceAll(' ', '_');
       final sanitizedCompanyName =
           (_userModel.companyName ?? 'Unknown').replaceAll(' ', '_');
-      final filePath =
-          '${directory.path}/${fileNamePrefix}_${sanitizedCompanyName}_$monthYear.csv';
+      final fileName = '${fileNamePrefix}_${sanitizedCompanyName}_$monthYear.csv';
+      String filePath;
+      if (Platform.isWindows) {
+        const String directoryPath = r'C:\payroll exports';
+        final directory = Directory(directoryPath);
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        filePath = '$directoryPath\\$fileName';
+      } else {
+        final directory = await getTemporaryDirectory();
+        filePath = '${directory.path}/$fileName';
+      }
       final file = File(filePath);
 
       await file.writeAsString(csv);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported to $filePath'),
+            backgroundColor: Colors.teal[700],
+          ),
+        );
+      }
       return filePath;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to export: $e'),
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: () => _exportToCSV(
-              fileNamePrefix: fileNamePrefix,
-              headers: headers,
-              fields: fields,
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to export: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _exportToCSV(
+                fileNamePrefix: fileNamePrefix,
+                headers: headers,
+                fields: fields,
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
       return '';
     } finally {
-      setState(() => _isExporting = false);
+      if (mounted) setState(() => _isExporting = false);
     }
   }
 
@@ -528,8 +540,9 @@ class _SHIFExportDetailsPageState extends State<_SHIFExportDetailsPage> {
                                   scrollDirection: Axis.vertical,
                                   child: DataTable(
                                     columnSpacing: 16,
-                                    dataRowHeight: 60,
-                                    headingRowColor: MaterialStateProperty.all(
+                                    dataRowMinHeight: 60,
+                                    dataRowMaxHeight: 60,
+                                    headingRowColor: WidgetStateProperty.all(
                                         Colors.teal[100]),
                                     columns: const [
                                       DataColumn(

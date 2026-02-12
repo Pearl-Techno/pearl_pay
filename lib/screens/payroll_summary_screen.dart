@@ -1,31 +1,98 @@
 import 'dart:io';
-
 import 'package:csv/csv.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/services.dart';
-import '../widgets/custom_app_bar.dart';
-import 'login_screen.dart';
+
+// Premium Design Constants
+class PayrollSummaryConstants {
+  // Main color palette
+  static const Color primaryColor = Color(0xFF0A2463);
+  static const Color secondaryColor = Color(0xFF3E92CC);
+  static const Color accentColor = Color(0xFF1DD3B0);
+  static const Color successColor = Color(0xFF00B894);
+  static const Color errorColor = Color(0xFFFF4757);
+  static const Color warningColor = Color(0xFFFFA502);
+  
+  // Background & Surface colors
+  static const Color backgroundColor = Color(0xFFF8FAFF);
+  static const Color surfaceColor = Color(0xFFFFFFFF);
+  static const Color cardColor = Color(0xFFFAFCFF);
+  
+  // Text colors
+  static const Color textPrimary = Color(0xFF1A1F36);
+  static const Color textSecondary = Color(0xFF4A5568);
+  static const Color textTertiary = Color(0xFF718096);
+  static const Color textLight = Color(0xFFFFFFFF);
+  
+  // Status colors
+  static const Color paidColor = Color(0xFF00B894);
+  static const Color pendingColor = Color(0xFFFFA502);
+  static const Color failedColor = Color(0xFFFF4757);
+  
+  // Gradients
+  static LinearGradient primaryGradient = LinearGradient(
+    colors: [primaryColor, Color(0xFF3A506B)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  
+  static LinearGradient accentGradient = LinearGradient(
+    colors: [accentColor, Color(0xFF2EC4B6)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  
+  // Shadows
+  static List<BoxShadow> subtleShadow = [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.05),
+      blurRadius: 20,
+      offset: const Offset(0, 4),
+    ),
+  ];
+  
+  static List<BoxShadow> mediumShadow = [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.1),
+      blurRadius: 30,
+      offset: const Offset(0, 8),
+    ),
+  ];
+  
+  static List<BoxShadow> strongShadow = [
+    BoxShadow(
+      color: Colors.black.withValues(alpha: 0.15),
+      blurRadius: 40,
+      offset: const Offset(0, 12),
+    ),
+  ];
+  
+  // Borders
+  static BorderRadius borderRadiusLarge = BorderRadius.circular(24);
+  static BorderRadius borderRadiusMedium = BorderRadius.circular(16);
+  static BorderRadius borderRadiusSmall = BorderRadius.circular(12);
+}
 
 class PayrollSummaryScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   final ApiService apiService;
 
   const PayrollSummaryScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _PayrollSummaryScreenState createState() => _PayrollSummaryScreenState();
+  PayrollSummaryScreenState createState() => PayrollSummaryScreenState();
 }
 
-class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
+class PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
   bool _isLoading = true;
   bool _isExporting = false;
   Map<String, dynamic> _payrollSummary = {};
@@ -35,11 +102,16 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
   final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _initializeCompany();
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark.copyWith(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ));
   }
 
   Future<void> _initializeCompany() async {
@@ -69,37 +141,7 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
         _isLoading = false;
         _companyName = widget.user['company_name']?.toString() ?? 'Unknown';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load company data: $e')),
-      );
-    }
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
+      _showErrorSnackBar('Failed to load company data: $e');
     }
   }
 
@@ -116,7 +158,6 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
         _selectedYear,
       );
 
-      // Check for month mismatch
       if (salaries.isNotEmpty) {
         final sampleDate =
             DateTime.tryParse(salaries.first['payment_date'] ?? '');
@@ -124,15 +165,10 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
             (sampleDate.month != _selectedMonth ||
                 sampleDate.year != _selectedYear)) {
           if (kDebugMode) {
-            print(
-                'Warning: Data for ${_selectedMonth}/${_selectedYear} not found, received ${sampleDate.month}/${sampleDate.year}');
+            print('Warning: Data for $_selectedMonth/$_selectedYear not found, received ${sampleDate.month}/${sampleDate.year}');
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Showing data for ${DateFormat('MMM yyyy').format(sampleDate)} instead of ${DateFormat('MMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}'),
-            ),
-          );
+          _showSuccessSnackBar(
+              'Showing data for ${DateFormat('MMM yyyy').format(sampleDate)} instead of ${DateFormat('MMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}');
         }
       }
 
@@ -154,9 +190,7 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
         print('Error fetching payroll for company ID $_companyId: $e');
       }
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      _showErrorSnackBar(errorMessage);
     }
   }
 
@@ -187,9 +221,7 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
 
   Future<void> _exportToCsv() async {
     if (_salaries.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No payroll summary available to export')),
-      );
+      _showErrorSnackBar('No payroll summary available to export');
       return;
     }
 
@@ -271,7 +303,7 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
                   salary['payment_date']?.toString() ?? 'N/A',
                   salary['company_name']?.toString() ?? 'Unknown',
                 ])
-            .toList(),
+            ,
       ];
 
       final csvData = [...summaryCsvData, ...detailedCsvData];
@@ -285,653 +317,854 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
       final file = File(filePath);
       await file.writeAsString(csvString);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
+      _showSuccessSnackBar('Payroll summary exported successfully to $filePath');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to export: $e'),
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: _exportToCsv,
-          ),
-        ),
-      );
+      _showErrorSnackBar('Failed to export: $e');
     } finally {
       setState(() => _isExporting = false);
     }
   }
 
-  Widget _buildDropdown<T>({
-    required T? value,
-    required List<T> items,
-    required String Function(T) itemBuilder,
-    required ValueChanged<T?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: PayrollSummaryConstants.successColor,
+            borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+            boxShadow: PayrollSummaryConstants.mediumShadow,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
                   ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
+                ),
+              ),
+            ],
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(24),
+        duration: const Duration(seconds: 3),
+        padding: EdgeInsets.zero,
       ),
     );
   }
 
-  Widget _buildSummaryCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Colors.teal[50]!],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: PayrollSummaryConstants.errorColor,
+            borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+            boxShadow: PayrollSummaryConstants.mediumShadow,
           ),
-          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        child: ListTile(
-          leading: Icon(icon, color: Colors.teal[700]),
-          title: Text(
-            title,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.teal[900],
-            ),
-          ),
-          subtitle: Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[800],
-            ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(24),
+        duration: const Duration(seconds: 4),
+        padding: EdgeInsets.zero,
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: Colors.white,
+          onPressed: _fetchPayrollSummary,
+        ),
+      ),
+    );
+  }
+
+  // Premium UI Components
+  Widget _buildHeaderSection() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: PayrollSummaryConstants.primaryGradient,
+        boxShadow: PayrollSummaryConstants.mediumShadow,
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Back Button and Title
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Payroll Summary',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        Text(
+                          _companyName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Export Button
+                  IconButton(
+                    onPressed: _isExporting ? null : _exportToCsv,
+                    icon: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: _isExporting
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.download_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                    ),
+                    tooltip: 'Export to CSV',
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Date Filters
+              _buildDateFilters(),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildDateFilters() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _buildFilterDropdown(
+                  value: _selectedMonth,
+                  items: List.generate(12, (index) => index + 1),
+                  itemBuilder: (month) => DateFormat('MMMM').format(DateTime(_selectedYear, month)),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedMonth = value!;
+                      _fetchPayrollSummary();
+                    });
+                  },
+                  hintText: 'Select Month',
+                  icon: Icons.calendar_month_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildFilterDropdown(
+                  value: _selectedYear,
+                  items: List.generate(5, (index) => DateTime.now().year - index),
+                  itemBuilder: (year) => year.toString(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedYear = value!;
+                      _fetchPayrollSummary();
+                    });
+                  },
+                  hintText: 'Select Year',
+                  icon: Icons.calendar_today_rounded,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+                ),
+                child: IconButton(
+                  onPressed: _fetchPayrollSummary,
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Viewing: ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterDropdown<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+    required String hintText,
+    required IconData icon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+        boxShadow: PayrollSummaryConstants.subtleShadow,
+      ),
+      child: DropdownButtonFormField<T>(
+        key: ValueKey(value),
+        initialValue: value,
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 14,
+          ),
+          filled: true,
+          fillColor: Colors.white.withValues(alpha: 0.1),
+          border: OutlineInputBorder(
+            borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+            borderSide: BorderSide(
+              color: Colors.white.withValues(alpha: 0.2),
+              width: 1.5,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+            borderSide: BorderSide(
+              color: Colors.white,
+              width: 2,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4,
+          ),
+          prefixIcon: Icon(
+            icon,
+            color: Colors.white.withValues(alpha: 0.7),
+          ),
+        ),
+        items: items.map((item) {
+          return DropdownMenuItem(
+            value: item,
+            child: Text(
+              itemBuilder(item),
+              style: const TextStyle(
+                fontSize: 14,
+                color: Colors.white,
+              ),
+            ),
+          );
+        }).toList(),
+        onChanged: onChanged,
+        dropdownColor: PayrollSummaryConstants.primaryColor,
+        icon: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: Colors.white.withValues(alpha: 0.7),
+        ),
+        style: const TextStyle(
+          fontSize: 14,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatisticsCards() {
+    if (_payrollSummary.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatCard(
+              title: 'Total Salaries',
+              value: 'KES ${NumberFormat('#,##0').format(_payrollSummary['total_salaries'] ?? 0)}',
+              icon: Icons.account_balance_wallet_rounded,
+              color: PayrollSummaryConstants.successColor,
+              subtitle: 'Gross payroll amount',
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              title: 'Total Taxes',
+              value: 'KES ${NumberFormat('#,##0').format(_payrollSummary['total_taxes'] ?? 0)}',
+              icon: Icons.receipt_long_rounded,
+              color: PayrollSummaryConstants.primaryColor,
+              subtitle: 'PAYE deductions',
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              title: 'Total Deductions',
+              value: 'KES ${NumberFormat('#,##0').format(_payrollSummary['total_deductions'] ?? 0)}',
+              icon: Icons.money_off_csred_rounded,
+              color: PayrollSummaryConstants.errorColor,
+              subtitle: 'All deductions',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: PayrollSummaryConstants.surfaceColor,
+        borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+        boxShadow: PayrollSummaryConstants.mediumShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: color,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: PayrollSummaryConstants.textTertiary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            subtitle,
+            style: TextStyle(
+              fontSize: 12,
+              color: PayrollSummaryConstants.textTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPayrollTable() {
+    return Container(
+      margin: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: PayrollSummaryConstants.surfaceColor,
+        borderRadius: PayrollSummaryConstants.borderRadiusLarge,
+        boxShadow: PayrollSummaryConstants.mediumShadow,
+      ),
+      child: Column(
+        children: [
+          // Table Header
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: PayrollSummaryConstants.cardColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: PayrollSummaryConstants.textTertiary.withValues(alpha: 0.1),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: PayrollSummaryConstants.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.table_chart_rounded,
+                    color: PayrollSummaryConstants.primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Payroll Details',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: PayrollSummaryConstants.textPrimary,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${_salaries.length} records',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: PayrollSummaryConstants.textTertiary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Table Content
+          Expanded(
+            child: Scrollbar(
+              controller: _verticalScrollController,
+              child: Scrollbar(
+                controller: _horizontalScrollController,
+                notificationPredicate: (notif) => notif.depth == 1,
+                child: SingleChildScrollView(
+                  controller: _verticalScrollController,
+                  child: SingleChildScrollView(
+                    controller: _horizontalScrollController,
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columnSpacing: 24,
+                      horizontalMargin: 24,
+                      dataRowMinHeight: 60,
+                      dataRowMaxHeight: 60,
+                      headingRowHeight: 60,
+                      headingTextStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: PayrollSummaryConstants.textSecondary,
+                      ),
+                      headingRowColor: WidgetStateProperty.all(
+                        PayrollSummaryConstants.cardColor,
+                      ),
+                      columns: _buildTableColumns(),
+                      rows: _salaries.map((salary) {
+                        return DataRow(
+                          color: WidgetStateProperty.resolveWith<Color?>(
+                            (Set<WidgetState> states) {
+                              if (states.contains(WidgetState.selected)) {
+                                return PayrollSummaryConstants.primaryColor.withValues(alpha: 0.1);
+                              }
+                              final index = _salaries.indexOf(salary);
+                              return index.isEven ? PayrollSummaryConstants.backgroundColor : null;
+                            },
+                          ),
+                          cells: [
+                            _buildDataCell(salary['id']?.toString() ?? 'N/A'),
+                            _buildDataCell(salary['employee_id']?.toString() ?? 'N/A'),
+                            _buildDataCell(salary['fullname']?.toString() ?? 'Unknown'),
+                            _buildCurrencyCell(salary['gross_pay']),
+                            _buildCurrencyCell(salary['basic_pay']),
+                            _buildCurrencyCell(salary['non_cash_benefits']),
+                            _buildCurrencyCell(salary['other_earnings']),
+                            _buildCurrencyCell(salary['overtime_amount']),
+                            _buildCurrencyCell(salary['absenteeism_deduction']),
+                            _buildCurrencyCell(salary['taxable_income']),
+                            _buildCurrencyCell(salary['nhif_deduction']),
+                            _buildCurrencyCell(salary['paye_deduction']),
+                            _buildCurrencyCell(salary['nssf_deduction']),
+                            _buildCurrencyCell(salary['pension_contributions']),
+                            _buildCurrencyCell(salary['loan_repayment']),
+                            _buildCurrencyCell(salary['other_deductions']),
+                            _buildCurrencyCell(salary['housing_levy']),
+                            _buildCurrencyCell(salary['housing_levy_relief']),
+                            _buildCurrencyCell(salary['net_pay'], isHighlighted: true),
+                            _buildStatusCell(salary['status']?.toString() ?? 'N/A'),
+                            _buildDataCell(_formatDate(salary['payment_date'])),
+                            _buildDataCell(salary['company_name']?.toString() ?? 'Unknown'),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<DataColumn> _buildTableColumns() {
+    return [
+      _buildDataColumn('ID'),
+      _buildDataColumn('Employee ID'),
+      _buildDataColumn('Full Name'),
+      _buildDataColumn('Gross Pay (KES)'),
+      _buildDataColumn('Basic Pay (KES)'),
+      _buildDataColumn('Non-Cash Benefits (KES)'),
+      _buildDataColumn('Other Earnings (KES)'),
+      _buildDataColumn('Overtime Amount (KES)'),
+      _buildDataColumn('Absenteeism Deduction (KES)'),
+      _buildDataColumn('Taxable Income (KES)'),
+      _buildDataColumn('NHIF Deduction (KES)'),
+      _buildDataColumn('PAYE Deduction (KES)'),
+      _buildDataColumn('NSSF Deduction (KES)'),
+      _buildDataColumn('Pension Contributions (KES)'),
+      _buildDataColumn('Loan Repayment (KES)'),
+      _buildDataColumn('Other Deductions (KES)'),
+      _buildDataColumn('Housing Levy (KES)'),
+      _buildDataColumn('Housing Levy Relief (KES)'),
+      _buildDataColumn('Net Pay (KES)'),
+      _buildDataColumn('Status'),
+      _buildDataColumn('Payment Date'),
+      _buildDataColumn('Company Name'),
+    ];
+  }
+
+  DataColumn _buildDataColumn(String label) {
+    return DataColumn(
+      label: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: PayrollSummaryConstants.textSecondary,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildDataCell(String text) {
+    return DataCell(
+      Tooltip(
+        message: text,
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            color: PayrollSummaryConstants.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildCurrencyCell(dynamic amount, {bool isHighlighted = false}) {
+    final value = double.tryParse(amount?.toString() ?? '0.0') ?? 0.0;
+    final formattedValue = NumberFormat('#,##0.00').format(value);
+    
+    return DataCell(
+      Tooltip(
+        message: 'KES $formattedValue',
+        child: Text(
+          formattedValue,
+          style: TextStyle(
+            fontSize: 13,
+            color: isHighlighted ? PayrollSummaryConstants.successColor : PayrollSummaryConstants.textPrimary,
+            fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildStatusCell(String status) {
+    final isPaid = status.toLowerCase().contains('paid');
+    final isPending = status.toLowerCase().contains('pending');
+    final color = isPaid 
+        ? PayrollSummaryConstants.paidColor 
+        : isPending 
+            ? PayrollSummaryConstants.pendingColor 
+            : PayrollSummaryConstants.failedColor;
+    
+    return DataCell(
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: color.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isPaid ? Icons.check_circle_rounded : 
+              isPending ? Icons.pending_rounded : Icons.error_rounded,
+              size: 14,
+              color: color,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              status,
+              style: TextStyle(
+                fontSize: 12,
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(PayrollSummaryConstants.primaryColor),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Loading Payroll Summary',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: PayrollSummaryConstants.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fetching data for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+            style: TextStyle(
+              fontSize: 14,
+              color: PayrollSummaryConstants.textTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: PayrollSummaryConstants.textTertiary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.summarize_outlined,
+              size: 40,
+              color: PayrollSummaryConstants.textTertiary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'No Payroll Data Found',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: PayrollSummaryConstants.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'No payroll records available for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+            style: TextStyle(
+              fontSize: 14,
+              color: PayrollSummaryConstants.textTertiary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _fetchPayrollSummary,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Refresh Data'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PayrollSummaryConstants.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: PayrollSummaryConstants.borderRadiusMedium,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String? dateString) {
+    if (dateString == null) return 'N/A';
+    try {
+      final date = DateTime.tryParse(dateString);
+      return date != null ? DateFormat('MMM dd, yyyy').format(date) : 'N/A';
+    } catch (e) {
+      return 'N/A';
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final numberFormat = NumberFormat('#,##0.00', 'en_US');
-
     return Scaffold(
-      appBar: CustomAppBar(
-        title: 'Payroll Summary - $_companyName',
-        backgroundColor: Colors.teal[800],
-        onNotificationTap: () {
-          if (kDebugMode) {
-            print('Notifications tapped');
-          }
-        },
-        onProfileTap: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (context) => Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.person, color: Colors.teal[700]),
-                    title: Text('Profile: ${widget.user['username']}'),
-                    subtitle: Text('Role: ${widget.user['role']}'),
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout, color: Colors.red[700]),
-                    title: const Text('Logout'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _logout(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.teal[50]!, Colors.teal[100]!],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      backgroundColor: PayrollSummaryConstants.backgroundColor,
+      body: Column(
+        children: [
+          _buildHeaderSection(),
+          if (!_isLoading && _payrollSummary.isNotEmpty) 
+            _buildStatisticsCards(),
+          Expanded(
+            child: _isLoading
+                ? _buildLoadingState()
+                : _salaries.isEmpty
+                    ? _buildEmptyState()
+                    : _buildPayrollTable(),
           ),
-        ),
-        child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: Colors.teal))
-            : CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Company: $_companyName',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.teal[900],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Container(
-                              padding: const EdgeInsets.all(16.0),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.white, Colors.teal[50]!],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: _buildDropdown(
-                                      value: _selectedMonth,
-                                      items: List.generate(
-                                          12, (index) => index + 1),
-                                      itemBuilder: (month) => DateFormat('MMMM')
-                                          .format(
-                                              DateTime(_selectedYear, month)),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _selectedMonth = value!;
-                                          _fetchPayrollSummary();
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: _buildDropdown(
-                                      value: _selectedYear,
-                                      items: List.generate(
-                                          10,
-                                          (index) =>
-                                              DateTime.now().year - index),
-                                      itemBuilder: (year) => year.toString(),
-                                      onChanged: (value) {
-                                        setState(() {
-                                          _selectedYear = value!;
-                                          _fetchPayrollSummary();
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: _fetchPayrollSummary,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.teal[700],
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
-                                    child: const Text('Refresh'),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: _payrollSummary.isEmpty
-                          ? Card(
-                              elevation: 4,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [Colors.white, Colors.teal[50]!],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Center(
-                                    child: Text('No payroll data available')),
-                              ),
-                            )
-                          : Column(
-                              children: [
-                                _buildSummaryCard(
-                                  icon: Icons.account_balance_wallet,
-                                  title: 'Total Salaries',
-                                  subtitle:
-                                      'KES ${numberFormat.format(_payrollSummary['total_salaries'] ?? 0)}',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildSummaryCard(
-                                  icon: Icons.money_off,
-                                  title: 'Total Taxes',
-                                  subtitle:
-                                      'KES ${numberFormat.format(_payrollSummary['total_taxes'] ?? 0)}',
-                                ),
-                                const SizedBox(height: 16),
-                                _buildSummaryCard(
-                                  icon: Icons.remove_circle_outline,
-                                  title: 'Total Deductions',
-                                  subtitle:
-                                      'KES ${numberFormat.format(_payrollSummary['total_deductions'] ?? 0)}',
-                                ),
-                              ],
-                            ),
-                    ),
-                  ),
-                  if (_salaries.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Card(
-                          elevation: 6,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          child: Container(
-                            width: MediaQuery.of(context).size.width - 32,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.white, Colors.teal[50]!],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Scrollbar(
-                              controller: _horizontalScrollController,
-                              thumbVisibility: true,
-                              thickness: 8.0,
-                              radius: const Radius.circular(4),
-                              child: SingleChildScrollView(
-                                controller: _horizontalScrollController,
-                                scrollDirection: Axis.horizontal,
-                                child: Container(
-                                  constraints:
-                                      const BoxConstraints(minWidth: 2200),
-                                  child: Scrollbar(
-                                    thumbVisibility: true,
-                                    thickness: 8.0,
-                                    radius: const Radius.circular(4),
-                                    child: SingleChildScrollView(
-                                      scrollDirection: Axis.vertical,
-                                      child: DataTable(
-                                        columnSpacing: 16.0,
-                                        dataRowHeight: 60,
-                                        headingRowColor:
-                                            MaterialStateProperty.all(
-                                                Colors.teal[100]),
-                                        columns: const [
-                                          DataColumn(
-                                              label: Text('ID',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Employee ID',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Full Name',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Gross Pay (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Basic Pay (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Non-Cash Benefits (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Other Earnings (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Overtime Amount (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Absenteeism Deduction (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Taxable Income (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'NHIF Deduction (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'PAYE Deduction (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'NSSF Deduction (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Pension Contributions (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Loan Repayment (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Other Deductions (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Housing Levy (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text(
-                                                  'Housing Levy Relief (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Net Pay (KES)',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Status',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Payment Date',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                          DataColumn(
-                                              label: Text('Company Name',
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Colors.teal))),
-                                        ],
-                                        rows: _salaries.map((salary) {
-                                          return DataRow(cells: [
-                                            DataCell(Text(
-                                                salary['id']?.toString() ??
-                                                    'N/A',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                salary['employee_id']
-                                                        ?.toString() ??
-                                                    'N/A',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                salary['fullname']
-                                                        ?.toString() ??
-                                                    'Unknown',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['gross_pay'] ?? 0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['basic_pay'] ?? 0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(salary[
-                                                        'non_cash_benefits'] ??
-                                                    0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['other_earnings'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['overtime_amount'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(salary[
-                                                        'absenteeism_deduction'] ??
-                                                    0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['taxable_income'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['nhif_deduction'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['paye_deduction'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['nssf_deduction'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(salary[
-                                                        'pension_contributions'] ??
-                                                    0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['loan_repayment'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(salary[
-                                                        'other_deductions'] ??
-                                                    0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['housing_levy'] ??
-                                                        0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(salary[
-                                                        'housing_levy_relief'] ??
-                                                    0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                numberFormat.format(
-                                                    salary['net_pay'] ?? 0),
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                salary['status']?.toString() ??
-                                                    'N/A',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                salary['payment_date']
-                                                        ?.toString() ??
-                                                    'N/A',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                            DataCell(Text(
-                                                salary['company_name']
-                                                        ?.toString() ??
-                                                    'Unknown',
-                                                style: TextStyle(
-                                                    color: Colors.grey[800]))),
-                                          ]);
-                                        }).toList(),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Card(
-                        elevation: 6,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        child: Container(
-                          padding: const EdgeInsets.all(16.0),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.white, Colors.teal[50]!],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ElevatedButton(
-                            onPressed: _isExporting ? null : _exportToCsv,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: _isExporting
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white)
-                                : const Text('Export Summary to CSV'),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+        ],
       ),
     );
   }
@@ -939,6 +1172,7 @@ class _PayrollSummaryScreenState extends State<PayrollSummaryScreen> {
   @override
   void dispose() {
     _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 }

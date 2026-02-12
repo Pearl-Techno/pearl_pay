@@ -6,10 +6,6 @@ import 'package:http/http.dart' as http;
 import '../models/user.dart';
 import 'base_api_service.dart';
 
-// Base URL for API requests
-const String _baseUrl = 'https://digiagekenya.com/pay_age/demo_api/';
-
-
 // API Endpoints: Defines all API endpoint paths as constants
 class ApiEndpoints {
   // Authentication Endpoints
@@ -42,6 +38,8 @@ class ApiEndpoints {
   static const String addDeduction = 'deductions/add_deduction.php';
   static const String fetchDeductionsList =
       'deductions/fetch_deductions_list.php';
+  static const String updateDeduction = 'deductions/update_deduction.php';
+  static const String deleteDeduction = 'deductions/delete_deduction.php';
 
   // Pension Management Endpoints
   static const String fetchPensionContributions =
@@ -162,15 +160,18 @@ class ApiService {
       : _client = client,
         _user = user;
 
+  // Get current base URL from ApiConfig
+  String get _baseUrl => ApiConfig.baseUrl;
+
   // Helper: Builds a URL with query parameters
   String _buildQueryUrl(String endpoint, Map<String, String> params) {
-    final uri =
-        Uri.https('digiagekenya.com', '/pay_age/demo_api/$endpoint', params);
+    final uri = Uri.parse('$_baseUrl$endpoint').replace(queryParameters: params);
     return uri.toString();
   }
 
   // Validation: Ensures the provided companyId matches the user's company_id
   void _validateCompanyId(int companyId) {
+    if (_user.role.toLowerCase() == 'admin') return;
     if (_user.companyId != companyId) {
       throw UnauthorizedAccessException(
           'Access denied: Company ID $companyId does not match user company ID ${_user.companyId}');
@@ -267,7 +268,7 @@ class ApiService {
             'token': data['token'] as String?,
           });
         }
-        throw UnauthorizedAccessException('Login failed: ${data['message']}');
+        throw UnauthorizedAccessException(data['message'] ?? 'Invalid username or password');
       } else if (response.statusCode == 403) {
         throw Exception('Access denied: reCAPTCHA verification required');
       } else {
@@ -403,34 +404,23 @@ class ApiService {
 
   // Overtime: Fetches overtime records for a company (admin-only or user-specific)
   Future<List<Map<String, dynamic>>> getOvertimeList(
-    String companyId, {
+    int companyId, {
     int? month,
     int? year,
   }) async {
-    String url = '${baseUrl}get_all_overtime.php?company_id=$companyId';
-    if (month != null) {
-      url += '&month=$month';
+    _validateCompanyId(companyId);
+    final queryParams = {
+      'company_id': companyId.toString(),
+      if (month != null) 'month': month.toString(),
+      if (year != null) 'year': year.toString(),
+    };
+    final url = _buildQueryUrl(ApiEndpoints.getOvertimeList, queryParams);
+    final data = await _getRequest(url);
+
+    if (data['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(data['overtime_records'] ?? []);
     }
-    if (year != null) {
-      url += '&year=$year';
-    }
-    final response = await http.get(Uri.parse(url));
-    if (kDebugMode) {
-      print('API URL: $url');
-    } // Debug log
-    if (kDebugMode) {
-      print('API Response: ${response.body}');
-    } // Debug log
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['status'] == 'success') {
-        return List<Map<String, dynamic>>.from(data['overtime_records']);
-      } else {
-        throw Exception('Failed to fetch overtime records: ${data['message']}');
-      }
-    } else {
-      throw Exception('HTTP error: ${response.statusCode}');
-    }
+    throw Exception('Failed to fetch overtime records: ${data['message']}');
   }
 
   // Overtime: Adds a new overtime record (admin-only)
@@ -471,7 +461,7 @@ class ApiService {
   }
 
   // Benefits: Fetches benefits for an employee
-Future<List<Map<String, dynamic>>> fetchBenefits(
+  Future<List<Map<String, dynamic>>> fetchBenefits(
       int companyId, int month, int year, String employeeId) async {
     if (kDebugMode) {
       print(
@@ -530,7 +520,6 @@ Future<List<Map<String, dynamic>>> fetchBenefits(
   }
 
   // Deductions: Fetches deductions for an employee
-// Deductions: Fetches deductions for an employee
   Future<List<Map<String, dynamic>>> fetchDeductions(
       int companyId, int month, int year, String employeeId) async {
     _validateCompanyId(companyId);
@@ -576,7 +565,6 @@ Future<List<Map<String, dynamic>>> fetchBenefits(
   }
 
   // Pension: Fetches all pension contributions for a company (admin-only)
- // Pension: Fetches all pension contributions for a company (admin-only)
   Future<List<Map<String, dynamic>>> fetchAllPensionContributions(
       int companyId, int month, int year) async {
     if (_user.role.toLowerCase() != 'admin') {
@@ -673,7 +661,14 @@ Future<List<Map<String, dynamic>>> fetchBenefits(
     final data = await _getRequest(url);
 
     if (data['status'] == 'success') {
-      return List<Map<String, dynamic>>.from(data['loans'] ?? []);
+      final loansData = data['loans'];
+      if (loansData is Map) {
+        return List<Map<String, dynamic>>.from(loansData.values.whereType<Map>());
+      }
+      if (loansData is List) {
+        return List<Map<String, dynamic>>.from(loansData.whereType<Map>());
+      }
+      return [];
     }
     throw Exception('Failed to fetch loans for employee: ${data['message']}');
   }
@@ -697,7 +692,14 @@ Future<List<Map<String, dynamic>>> fetchBenefits(
     final data = await _getRequest(url);
 
     if (data['status'] == 'success') {
-      return List<Map<String, dynamic>>.from(data['loans'] ?? []);
+      final loansData = data['loans'];
+      if (loansData is Map) {
+        return List<Map<String, dynamic>>.from(loansData.values.whereType<Map>());
+      }
+      if (loansData is List) {
+        return List<Map<String, dynamic>>.from(loansData.whereType<Map>());
+      }
+      return [];
     }
 
     throw Exception('Failed to fetch loans: ${data['message']}');
@@ -793,24 +795,36 @@ Future<bool> checkPaidStatus(
 
 
 
-  // Salaries: Fetches saved salaries for a company (admin-only or user-specific)
-  Future<List<Map<String, dynamic>>> getSalaries(int companyId) async {
-    _validateCompanyId(companyId);
+// Salaries: Fetches saved salaries for a company (admin-only or user-specific)
+Future<List<Map<String, dynamic>>> getSalaries(
+  int companyId, {
+  int? month,
+  int? year,
+}) async {
+  _validateCompanyId(companyId);
 
-    final now = DateTime.now();
-    final url = _buildQueryUrl(ApiEndpoints.getSalaries, {
-      'company_id': '$companyId',
-      'month': '${now.month}',
-      'year': '${now.year}',
-    });
+  final now = DateTime.now();
+  // Use provided month/year or default to current month/year
+  final effectiveMonth = month ?? now.month;
+  final effectiveYear = year ?? now.year;
 
-    final data = await _getRequest(url);
+  final url = _buildQueryUrl(ApiEndpoints.getSalaries, {
+    'company_id': '$companyId',
+    'month': '$effectiveMonth',
+    'year': '$effectiveYear',
+  });
 
-    if (data['status'] == 'success') {
-      return List<Map<String, dynamic>>.from(data['salaries'] ?? []);
-    }
-    throw Exception('Failed to fetch salaries: ${data['message']}');
+  if (kDebugMode) {
+    print('API URL with month/year: $url');
   }
+
+  final data = await _getRequest(url);
+
+  if (data['status'] == 'success') {
+    return List<Map<String, dynamic>>.from(data['salaries'] ?? []);
+  }
+  throw Exception('Failed to fetch salaries: ${data['message']}');
+}
 
   // Deductions: Adds a new deduction for an employee (admin-only)
   Future<void> addDeduction(
@@ -821,7 +835,11 @@ Future<bool> checkPaidStatus(
     }
     _validateCompanyId(companyId);
 
-    final requestData = {...deductionData, 'company_id': companyId};
+    final requestData = {
+      'company_id': companyId,
+      ...deductionData,
+      'user_id': _user.userId ?? ''
+    };
     final data = await _postRequest(ApiEndpoints.addDeduction, requestData);
 
     if (data['status'] != 'success') {
@@ -829,13 +847,65 @@ Future<bool> checkPaidStatus(
     }
   }
 
-  // Deductions: Fetches deductions for a company (admin-only or user-specific)
-  Future<List<Map<String, dynamic>>> fetchDeductionsList(int companyId) async {
+  // Deductions: Updates a deduction (admin-only)
+  Future<void> updateDeduction(
+      int deductionId, Map<String, dynamic> deductionData) async {
+    if (_user.role.toLowerCase() != 'admin') {
+      throw UnauthorizedAccessException(
+          'Access denied: Only admins can update deductions');
+    }
+
+    // Validate company ID if present in data, otherwise default to user's company
+    int companyId = _user.companyId;
+    if (deductionData.containsKey('company_id')) {
+      companyId = int.parse(deductionData['company_id'].toString());
+    }
     _validateCompanyId(companyId);
-    final queryParams = {'company_id': companyId.toString()};
+
+    final requestData = {
+      'id': deductionId,
+      ...deductionData,
+      'user_id': _user.userId ?? ''
+    };
+    final data = await _postRequest(ApiEndpoints.updateDeduction, requestData);
+
+    if (data['status'] != 'success') {
+      throw Exception('Failed to update deduction: ${data['message']}');
+    }
+  }
+
+  // Deductions: Deletes a deduction (admin-only)
+  Future<void> deleteDeduction(int deductionId) async {
+    if (_user.role.toLowerCase() != 'admin') {
+      throw UnauthorizedAccessException(
+          'Access denied: Only admins can delete deductions');
+    }
+    _validateCompanyId(_user.companyId);
+
+    final requestData = {
+      'id': deductionId,
+      'company_id': _user.companyId,
+      'user_id': _user.userId ?? ''
+    };
+    final data = await _postRequest(ApiEndpoints.deleteDeduction, requestData);
+
+    if (data['status'] != 'success') {
+      throw Exception('Failed to delete deduction: ${data['message']}');
+    }
+  }
+
+  // Deductions: Fetches deductions for a company (admin-only or user-specific)
+  Future<List<Map<String, dynamic>>> fetchDeductionsList(int companyId, {int? month, int? year}) async {
+    _validateCompanyId(companyId);
+    final queryParams = {
+      'company_id': companyId.toString(),
+      'user_id': _user.userId ?? ''
+    };
     if (_user.role.toLowerCase() != 'admin') {
       queryParams['employee_id'] = _user.employeeId!;
     }
+    if (month != null) queryParams['month'] = month.toString();
+    if (year != null) queryParams['year'] = year.toString();
 
     final url = _buildQueryUrl(ApiEndpoints.fetchDeductionsList, queryParams);
     final data = await _getRequest(url);
@@ -1454,7 +1524,6 @@ Future<bool> checkPaidStatus(
   // New Appraisal Methods
 
   // Fetches appraisals based on role (employee, manager, operator, director)
-// Fetches appraisals based on role (employee, manager, operator, director)
   Future<List<Map<String, dynamic>>> getAppraisals({
     required int companyId,
     required String role,

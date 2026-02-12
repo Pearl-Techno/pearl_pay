@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class OvertimeRatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const OvertimeRatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _OvertimeRatesScreenState createState() => _OvertimeRatesScreenState();
+  State<OvertimeRatesScreen> createState() => _OvertimeRatesScreenState();
 }
 
 class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
@@ -81,11 +82,11 @@ class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'overtime_rate': double.parse(_overtimeRateController.text),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'overtime_rate': double.parse(_overtimeRateController.text),
+      // };
 
     //  await widget.apiService.updateOvertimeRate(data);
 
@@ -113,7 +114,7 @@ class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -134,6 +135,7 @@ class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -148,7 +150,9 @@ class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
         title: 'Overtime Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -168,7 +172,7 @@ class _OvertimeRatesScreenState extends State<OvertimeRatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

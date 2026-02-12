@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -12,13 +13,13 @@ class PAYERatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const PAYERatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _PAYERatesScreenState createState() => _PAYERatesScreenState();
+  State<PAYERatesScreen> createState() => _PAYERatesScreenState();
 }
 
 class _PAYERatesScreenState extends State<PAYERatesScreen> {
@@ -135,15 +136,15 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'rates': _taxBrackets.map((bracket) => {
-              'monthly_range': bracket['monthly_controller'].text,
-              'annual_range': bracket['annual_controller'].text,
-              'rate': double.parse(bracket['rate_controller'].text),
-            }).toList(),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'rates': _taxBrackets.map((bracket) => {
+      //         'monthly_range': bracket['monthly_controller'].text,
+      //         'annual_range': bracket['annual_controller'].text,
+      //         'rate': double.parse(bracket['rate_controller'].text),
+      //       }).toList(),
+      // };
 
     //  await widget.apiService.updatePAYERates(data);
 
@@ -171,7 +172,7 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -192,6 +193,7 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -252,7 +254,9 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
         title: 'Set PAYE Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -272,7 +276,7 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],
@@ -345,9 +349,7 @@ class _PAYERatesScreenState extends State<PAYERatesScreen> {
                                 child: Column(
                                   children: _taxBrackets
                                       .asMap()
-                                      .entries
-                                      .map((entry) {
-                                    int index = entry.key;
+                                      .entries.map((entry) {
                                     var bracket = entry.value;
                                     return Padding(
                                       padding: const EdgeInsets.symmetric(

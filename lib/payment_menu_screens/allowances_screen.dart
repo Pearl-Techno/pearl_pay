@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 
 import '../models/user.dart';
@@ -27,11 +28,11 @@ class _AllowancesScreenState extends State<AllowancesScreen> {
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
           // Add your notification handling logic here
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'AllowancesScreen');
         },
         onProfileTap: () {
           // Add your profile handling logic here
-          print('Profile tapped');
+          developer.log('Profile tapped', name: 'AllowancesScreen');
         },
       ),
       body: Center(

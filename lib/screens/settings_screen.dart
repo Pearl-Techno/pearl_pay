@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,7 +30,7 @@ class SettingsScreen extends StatefulWidget {
   });
 
   @override
-  _SettingsScreenState createState() => _SettingsScreenState();
+  State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
@@ -55,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!context.mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -71,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: 'Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'SettingsScreen');
         },
         onProfileTap: () {
           // Show profile options, including logout
@@ -345,7 +347,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Card(
       elevation: 6,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      shadowColor: Colors.grey.withOpacity(0.3),
+      shadowColor: Colors.grey.withValues(alpha: 0.3),
       child: InkWell(
         onTap: () {
           Navigator.push(

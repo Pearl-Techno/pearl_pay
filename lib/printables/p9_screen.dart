@@ -8,25 +8,42 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user.dart';
+import '../screens/login_screen.dart';
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
+
+// Constants - Using same colors as other screens
+class P9Constants {
+  static const Color primaryColor = Color(0xFF0D47A1);
+  static const Color secondaryColor = Color(0xFF1976D2);
+  static const Color accentColor = Color(0xFF00B0FF);
+  static const Color successColor = Color(0xFF2E7D32);
+  static const Color backgroundColor = Color(0xFFF5F9FF);
+  static const Color cardColor = Color(0xFFFFFFFF);
+  static const Color textColor = Color(0xFF1A237E);
+  static const Color subtitleColor = Color(0xFF546E7A);
+  static const Color greyColor = Color(0xFF9E9E9E);
+  static const Color errorColor = Color(0xFFC62828);
+  static const Color warningColor = Color(0xFFFF9800);
+}
 
 class P9Screen extends StatefulWidget {
   final Map<String, dynamic> user;
   final ApiService apiService;
   const P9Screen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _P9ScreenState createState() => _P9ScreenState();
+  P9ScreenState createState() => P9ScreenState();
 }
 
-class _P9ScreenState extends State<P9Screen> {
+class P9ScreenState extends State<P9Screen> {
   late final ApiService _apiService;
   List<Map<String, dynamic>> _p9Data = [];
   List<Map<String, dynamic>> _employees = [];
@@ -45,6 +62,104 @@ class _P9ScreenState extends State<P9Screen> {
     final user = User.fromMap(widget.user); // Convert Map to User
     _apiService = ApiService(client: http.Client(), user: user);
     _fetchCompanies();
+  }
+
+  // Enhanced logout function with consistent styling
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: P9Constants.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Logout', style: TextStyle(
+          color: P9Constants.textColor,
+          fontWeight: FontWeight.w600,
+        )),
+        content: Text('Are you sure you want to log out?', style: TextStyle(
+          color: P9Constants.subtitleColor,
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(
+              color: P9Constants.subtitleColor,
+            )),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: P9Constants.errorColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
+
+  // Snackbar helper methods
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: P9Constants.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: P9Constants.errorColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showWarningSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: P9Constants.warningColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   Future<void> _fetchCompanies() async {
@@ -70,9 +185,7 @@ class _P9ScreenState extends State<P9Screen> {
           selectedCompanyId = null;
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No company assigned to user')),
-        );
+        _showErrorSnackBar('No company assigned to user');
         return;
       }
 
@@ -108,9 +221,7 @@ class _P9ScreenState extends State<P9Screen> {
         companyIdToName = {};
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load companies: $e')),
-      );
+      _showErrorSnackBar('Failed to load companies: $e');
     }
   }
 
@@ -134,9 +245,7 @@ class _P9ScreenState extends State<P9Screen> {
       if (kDebugMode) {
         print('Error fetching employees: $e');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load employees: $e')),
-      );
+      _showErrorSnackBar('Failed to load employees: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -144,9 +253,7 @@ class _P9ScreenState extends State<P9Screen> {
 
   Future<void> _fetchP9Data() async {
     if (selectedCompanyId == null || selectedEmployeeId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a company and employee')),
-      );
+      _showWarningSnackBar('Please select a company and employee');
       return;
     }
 
@@ -223,12 +330,11 @@ class _P9ScreenState extends State<P9Screen> {
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load P9 data: $e')),
-      );
+      _showErrorSnackBar('Failed to load P9 data: $e');
     }
   }
 
+  // Keep all the PDF generation methods exactly as they were
   Future<Uint8List> _generateP9Pdf() async {
     final pdf = pw.Document();
     final numberFormat = NumberFormat('#,##0.00', 'en_US');
@@ -293,7 +399,7 @@ class _P9ScreenState extends State<P9Screen> {
               ),
               pw.SizedBox(height: 10),
 
-              // Table
+              // Table (keep the entire table structure exactly as it was)
               pw.Table(
                 border: pw.TableBorder.all(),
                 columnWidths: {
@@ -324,6 +430,7 @@ class _P9ScreenState extends State<P9Screen> {
                                 fontSize: 8, fontWeight: pw.FontWeight.bold),
                             textAlign: pw.TextAlign.center),
                       ),
+                      // ... (keep all the table header cells exactly as they were)
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(4),
                         child: pw.Text('Basic Salary\nKshs.\nA',
@@ -413,7 +520,7 @@ class _P9ScreenState extends State<P9Screen> {
                     ],
                   ),
 
-                  // Monthly Rows
+                  // Monthly Rows (keep all data rows exactly as they were)
                   ..._p9Data.map((data) {
                     final hasData = data['hasData'] as bool;
                     return pw.TableRow(
@@ -433,6 +540,7 @@ class _P9ScreenState extends State<P9Screen> {
                               style: const pw.TextStyle(fontSize: 8),
                               textAlign: pw.TextAlign.center),
                         ),
+                        // ... (keep all other table cells exactly as they were)
                         pw.Padding(
                           padding: const pw.EdgeInsets.all(4),
                           child: pw.Text(
@@ -536,9 +644,9 @@ class _P9ScreenState extends State<P9Screen> {
                         ),
                       ],
                     );
-                  }).toList(),
+                  }),
 
-                  // Totals Row
+                  // Totals Row (keep totals exactly as they were)
                   pw.TableRow(
                     decoration: pw.BoxDecoration(color: PdfColors.grey200),
                     children: [
@@ -563,6 +671,7 @@ class _P9ScreenState extends State<P9Screen> {
                                 fontSize: 8, fontWeight: pw.FontWeight.bold),
                             textAlign: pw.TextAlign.center),
                       ),
+                      // ... (keep all other total cells exactly as they were)
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(4),
                         child: pw.Text(
@@ -715,7 +824,7 @@ class _P9ScreenState extends State<P9Screen> {
                 ],
               ),
 
-              // Footer
+              // Footer (keep footer exactly as it was)
               pw.SizedBox(height: 10),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -786,9 +895,7 @@ class _P9ScreenState extends State<P9Screen> {
 
   Future<void> _downloadP9() async {
     if (_p9Data.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No P9 data available to download')),
-      );
+      _showWarningSnackBar('No P9 data available to download');
       return;
     }
 
@@ -819,16 +926,9 @@ class _P9ScreenState extends State<P9Screen> {
 
       await Printing.sharePdf(bytes: pdfContent, filename: filename);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('P9 Form saved as $filename to $baseDir'),
-          backgroundColor: Colors.teal,
-        ),
-      );
+      _showSuccessSnackBar('P9 Form saved as $filename to $baseDir');
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save P9 form: $e')),
-      );
+      _showErrorSnackBar('Failed to save P9 form: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -839,250 +939,455 @@ class _P9ScreenState extends State<P9Screen> {
     final userCompanyName = widget.user['company_name']?.toString() ?? 'Unknown';
 
     return Scaffold(
+      backgroundColor: P9Constants.backgroundColor,
       appBar: CustomAppBar(
-        title: 'P9 Forms',
-        backgroundColor: Colors.teal[800],
+        title: 'P9 Forms Dashboard',
+        backgroundColor: P9Constants.primaryColor,
         onNotificationTap: () {
-          if (kDebugMode) {
-            print('Notifications tapped');
-          }
+          // Handle notifications
         },
         onProfileTap: () {
-          if (kDebugMode) {
-            print('Profile tapped');
-          }
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: P9Constants.cardColor,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: P9Constants.greyColor.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: P9Constants.primaryColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.person, color: P9Constants.primaryColor),
+                    ),
+                    title: Text('Profile: ${widget.user['username']}',
+                        style: TextStyle(
+                          color: P9Constants.textColor,
+                          fontWeight: FontWeight.w600,
+                        )),
+                    subtitle: Text('Role: ${widget.user['role']}',
+                        style: TextStyle(color: P9Constants.subtitleColor)),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _logout();
+                      },
+                      icon: Icon(Icons.logout, size: 20),
+                      label: const Text('Logout'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: P9Constants.errorColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
         },
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.teal[50]!, Colors.teal[100]!],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    P9Constants.primaryColor,
+                    P9Constants.secondaryColor
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                child: Container(
-                  padding: const EdgeInsets.all(16.0),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.white, Colors.teal[50]!],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: P9Constants.primaryColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    child: Icon(
+                      Icons.assignment,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'P9 Forms Dashboard',
+                          style: const TextStyle(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.teal[200]!),
-                          ),
-                          child: Text(
-                            userCompanyName,
-                            style: TextStyle(
-                              color: Colors.teal[900],
-                              fontSize: 14,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                      _buildDropdown(
-                        value: selectedEmployeeId,
-                        items: [
-                          null,
-                          ..._employees.map((e) => e['employee_id'].toString())
-                        ],
-                        itemBuilder: (id) => id == null
-                            ? 'Select Employee'
-                            : _employees
-                                .firstWhere(
-                                    (e) => e['employee_id'].toString() == id,
-                                    orElse: () =>
-                                        {'fullname': 'Unknown'})['fullname']
-                                .toString(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedEmployeeId = value;
-                          });
-                        },
-                      ),
-                      _buildDropdown(
-                        value: selectedYear,
-                        items: List.generate(
-                            10, (index) => DateTime.now().year - index),
-                        itemBuilder: (year) => year.toString(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedYear = value!;
-                          });
-                        },
-                      ),
-                      ElevatedButton(
-                        onPressed: _fetchP9Data,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal[700],
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Generate and download P9 tax forms for employees',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 14,
                           ),
                         ),
-                        child: const Text('Refresh'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _downloadP9,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal[700],
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Download P9 Form'),
+            ),
+            const SizedBox(height: 20),
+
+            // Controls Card
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: _isLoading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.teal[700],
-                        ),
-                      )
-                    : _p9Data.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No data available for selected filters',
-                              style: TextStyle(
-                                color: Colors.teal[900],
-                                fontSize: 16,
-                              ),
-                            ),
-                          )
-                        : Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.white, Colors.teal[50]!],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: P9Constants.cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Company',
+                                style: TextStyle(
+                                  color: P9Constants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
                                 ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: P9Constants.cardColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: P9Constants.primaryColor.withValues(alpha: 0.3)),
+                                ),
+                                child: Text(
+                                  userCompanyName,
+                                  style: TextStyle(
+                                    color: P9Constants.textColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Employee',
+                                style: TextStyle(
+                                  color: P9Constants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDropdown(
+                                value: selectedEmployeeId,
+                                items: [
+                                  null,
+                                  ..._employees.map((e) => e['employee_id'].toString()),
+                                ],
+                                itemBuilder: (id) => id == null
+                                    ? 'Select Employee'
+                                    : _employees
+                                        .firstWhere(
+                                            (e) => e['employee_id'].toString() == id,
+                                            orElse: () =>
+                                                {'fullname': 'Unknown'})['fullname']
+                                        .toString(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedEmployeeId = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Year',
+                                style: TextStyle(
+                                  color: P9Constants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDropdown(
+                                value: selectedYear,
+                                items: List.generate(
+                                    10, (index) => DateTime.now().year - index),
+                                itemBuilder: (year) => year.toString(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedYear = value!;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _fetchP9Data,
+                            icon: Icon(Icons.refresh, size: 20),
+                            label: const Text('Generate P9 Data'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: P9Constants.primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  columnSpacing: 16,
-                                  dataRowHeight: 60,
-                                  headingRowColor:
-                                      WidgetStateProperty.all(Colors.teal[100]),
-                                  columns: [
-                                    _buildDataColumn('Month'),
-                                    _buildDataColumn('Basic Salary (A)'),
-                                    _buildDataColumn('Benefits (B)'),
-                                    _buildDataColumn('Quarters (C)'),
-                                    _buildDataColumn('Gross Pay (D)'),
-                                    _buildDataColumn('Retirement Scheme (E)'),
-                                    _buildDataColumn('Owner Interest (F)'),
-                                    _buildDataColumn(
-                                        'Retirement + Interest (G)'),
-                                    _buildDataColumn('Chargeable Pay (H)'),
-                                    _buildDataColumn('Tax Charged (J)'),
-                                    _buildDataColumn('Personal Relief (K)'),
-                                    _buildDataColumn('Insurance Relief (L)'),
-                                    _buildDataColumn('P.A.Y.E Tax (M)'),
-                                  ],
-                                  rows: _p9Data.map((data) {
-                                    final hasData = data['hasData'] as bool;
-                                    final numberFormat =
-                                        NumberFormat('#,##0.00', 'en_US');
-                                    return DataRow(
-                                      cells: [
-                                        _buildDataCell(data['month']),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['basic_salary'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['benefits'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['quarters'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['gross_pay'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? '${numberFormat.format(data['e1'])}\n${numberFormat.format(data['e2'])}\n${numberFormat.format(data['e3'])}'
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['owner_interest'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat.format(
-                                                data['retirement_added'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['chargeable_pay'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['tax_charged'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['personal_relief'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat.format(
-                                                data['insurance_relief'])
-                                            : ''),
-                                        _buildDataCell(hasData
-                                            ? numberFormat
-                                                .format(data['paye_tax'])
-                                            : ''),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _downloadP9,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(Icons.download, size: 20),
+                            label: Text(_isLoading ? 'Downloading...' : 'Download P9 Form'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: P9Constants.accentColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+            ),
+            const SizedBox(height: 20),
+
+            // Results Section
+            Text(
+              'P9 Data (${_p9Data.length} months)',
+              style: TextStyle(
+                color: P9Constants.textColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: P9Constants.primaryColor,
+                      ),
+                    )
+                  : _p9Data.isEmpty
+                      ? Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          child: Container(
+                            padding: const EdgeInsets.all(40),
+                            decoration: BoxDecoration(
+                              color: P9Constants.cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.assignment_outlined,
+                                  size: 80,
+                                  color: P9Constants.greyColor.withValues(alpha: 0.5),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No P9 Data Available',
+                                  style: TextStyle(
+                                    color: P9Constants.textColor,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Generate P9 data using the controls above',
+                                  style: TextStyle(
+                                    color: P9Constants.subtitleColor,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : _buildP9DataTable(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildP9DataTable() {
+    return Card(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: P9Constants.cardColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 16,
+            dataRowMinHeight: 60,
+            dataRowMaxHeight: 60,
+            headingRowColor: WidgetStateProperty.all(P9Constants.primaryColor.withValues(alpha: 0.1)),
+            columns: [
+              _buildDataColumn('Month'),
+              _buildDataColumn('Basic Salary (A)'),
+              _buildDataColumn('Benefits (B)'),
+              _buildDataColumn('Quarters (C)'),
+              _buildDataColumn('Gross Pay (D)'),
+              _buildDataColumn('Retirement Scheme (E)'),
+              _buildDataColumn('Owner Interest (F)'),
+              _buildDataColumn('Retirement + Interest (G)'),
+              _buildDataColumn('Chargeable Pay (H)'),
+              _buildDataColumn('Tax Charged (J)'),
+              _buildDataColumn('Personal Relief (K)'),
+              _buildDataColumn('Insurance Relief (L)'),
+              _buildDataColumn('P.A.Y.E Tax (M)'),
             ],
+            rows: _p9Data.map((data) {
+              final hasData = data['hasData'] as bool;
+              final numberFormat = NumberFormat('#,##0.00', 'en_US');
+              return DataRow(
+                cells: [
+                  _buildDataCell(data['month']),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['basic_salary'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['benefits'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['quarters'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['gross_pay'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? '${numberFormat.format(data['e1'])}\n${numberFormat.format(data['e2'])}\n${numberFormat.format(data['e3'])}'
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['owner_interest'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['retirement_added'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['chargeable_pay'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['tax_charged'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['personal_relief'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['insurance_relief'])
+                      : ''),
+                  _buildDataCell(hasData
+                      ? numberFormat.format(data['paye_tax'])
+                      : ''),
+                ],
+              );
+            }).toList(),
           ),
         ),
       ),
@@ -1095,8 +1400,8 @@ class _P9ScreenState extends State<P9Screen> {
         label,
         style: TextStyle(
           fontWeight: FontWeight.w600,
-          color: Colors.teal[900],
-          fontSize: 14,
+          color: P9Constants.textColor,
+          fontSize: 12,
         ),
       ),
     );
@@ -1107,42 +1412,56 @@ class _P9ScreenState extends State<P9Screen> {
       Text(
         text,
         style: TextStyle(
-          color: Colors.grey[800],
+          color: P9Constants.textColor,
           fontSize: 12,
         ),
       ),
     );
   }
 
-  Widget _buildDropdown<T>({
-    required T? value,
-    required List<T?> items,
-    required String Function(T?) itemBuilder,
-    required ValueChanged<T?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
+ Widget _buildDropdown<T>({
+  required T? value,
+  required List<T?> items,
+  required String Function(T?) itemBuilder,
+  required ValueChanged<T?> onChanged,
+}) {
+  // Remove duplicate values to fix the DropdownButton assertion error
+  final uniqueItems = items.toSet().toList();
+  
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    decoration: BoxDecoration(
+      color: P9Constants.cardColor,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: P9Constants.primaryColor.withValues(alpha: 0.3)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.05),
+          blurRadius: 8,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: DropdownButton<T>(
+      value: value,
+      items: uniqueItems
+          .map((item) => DropdownMenuItem(
+                value: item,
+                child: Text(
+                  itemBuilder(item),
+                  style: TextStyle(
+                    color: P9Constants.textColor,
+                    fontSize: 14,
                   ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-      ),
-    );
-  }
+                ),
+              ))
+          .toList(),
+      onChanged: onChanged,
+      underline: const SizedBox(),
+      dropdownColor: P9Constants.cardColor,
+      icon: Icon(Icons.arrow_drop_down, color: P9Constants.primaryColor),
+      isExpanded: true,
+    ),
+  );
+}
 }

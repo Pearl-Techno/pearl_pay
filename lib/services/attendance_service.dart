@@ -1,12 +1,9 @@
-import 'package:http/http.dart' as http;
 
-import '../models/user.dart';
 import 'api_endpoints.dart';
 import 'base_api_service.dart';
 
 class AttendanceService extends BaseApiService {
-  AttendanceService({required http.Client client, required User user})
-      : super(client: client, user: user);
+  AttendanceService({required super.client, required super.user});
 
   Future<List<Map<String, dynamic>>> getAttendanceRecords({
     required int companyId,

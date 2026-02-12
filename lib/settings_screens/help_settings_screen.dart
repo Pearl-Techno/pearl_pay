@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -16,13 +17,13 @@ class HelpSettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const HelpSettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _HelpSettingsScreenState createState() => _HelpSettingsScreenState();
+  State<HelpSettingsScreen> createState() => _HelpSettingsScreenState();
 }
 
 class _HelpSettingsScreenState extends State<HelpSettingsScreen> {
@@ -116,6 +117,7 @@ class _HelpSettingsScreenState extends State<HelpSettingsScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!context.mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -130,7 +132,7 @@ class _HelpSettingsScreenState extends State<HelpSettingsScreen> {
         title: 'Help & Support',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'HelpSettingsScreen');
         },
         onProfileTap: () {
           showModalBottomSheet(

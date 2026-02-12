@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,7 +16,7 @@ class ContactSupportScreen extends StatefulWidget {
   });
 
   @override
-  _ContactSupportScreenState createState() => _ContactSupportScreenState();
+  State<ContactSupportScreen> createState() => _ContactSupportScreenState();
 }
 
 class _ContactSupportScreenState extends State<ContactSupportScreen> {
@@ -57,6 +58,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
         'user_id': widget.user['id']?.toString() ?? 'N/A',
       });
 
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Message sent successfully'),
@@ -68,6 +71,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
       _emailController.clear();
       _messageController.clear();
     } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to send message: $e'),
@@ -89,6 +94,8 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Could not launch $url'),
@@ -106,10 +113,10 @@ class _ContactSupportScreenState extends State<ContactSupportScreen> {
         title: 'Contact Support',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'ContactSupportScreen');
         },
         onProfileTap: () {
-          print('Profile tapped');
+          developer.log('Profile tapped', name: 'ContactSupportScreen');
         },
       ),
       body: Container(

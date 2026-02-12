@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,13 +12,13 @@ class AccountSettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const AccountSettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _AccountSettingsScreenState createState() => _AccountSettingsScreenState();
+  State<AccountSettingsScreen> createState() => _AccountSettingsScreenState();
 }
 
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
@@ -48,7 +49,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   }
 
   // Logout function to clear SharedPreferences and navigate to LoginScreen
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -69,6 +70,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -88,13 +90,13 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         throw Exception('User data is incomplete (missing ID or role)');
       }
 
-      final updatedData = {
-        'user_id': widget.user['id'].toString(),
-        'username': _usernameController.text.trim(),
-        'email': _emailController.text.trim(),
-        if (_passwordController.text.isNotEmpty)
-          'password': _passwordController.text,
-      };
+      // final updatedData = {
+      //   'user_id': widget.user['id'].toString(),
+      //   'username': _usernameController.text.trim(),
+      //   'email': _emailController.text.trim(),
+      //   if (_passwordController.text.isNotEmpty)
+      //     'password': _passwordController.text,
+      // };
 
       //await widget.apiService.updateAccount(updatedData);
 
@@ -135,7 +137,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         title: 'Account Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -155,7 +159,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

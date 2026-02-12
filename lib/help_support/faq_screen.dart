@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 
 import '../widgets/custom_app_bar.dart';
@@ -12,10 +13,10 @@ class FAQScreen extends StatelessWidget {
         title: 'Frequently Asked Questions',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'FAQScreen');
         },
         onProfileTap: () {
-          print('Profile tapped');
+          developer.log('Profile tapped', name: 'FAQScreen');
         },
       ),
       body: Container(

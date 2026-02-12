@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,10 +17,10 @@ class AddCompanyScreen extends StatefulWidget {
   });
 
   @override
-  _AddCompanyScreenState createState() => _AddCompanyScreenState();
+  AddCompanyScreenState createState() => AddCompanyScreenState();
 }
 
-class _AddCompanyScreenState extends State<AddCompanyScreen> {
+class AddCompanyScreenState extends State<AddCompanyScreen> {
   final _formKey = GlobalKey<FormState>();
   final _companyNameController = TextEditingController();
   final _physicalAddressController = TextEditingController();
@@ -112,9 +113,12 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
             'action': 'add',
           });
         } catch (e) {
-          print('Failed to log company action: $e');
+          if (kDebugMode) {
+            print('Failed to log company action: $e');
+          }
         }
 
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Company Added: ${_companyNameController.text}'),
@@ -133,6 +137,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
 
         await _fetchCompanies();
       } catch (e) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to add company: $e'),
@@ -151,7 +156,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -172,6 +177,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -186,7 +192,9 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
         title: 'Company Management',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -207,7 +215,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],
@@ -457,8 +465,9 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columnSpacing: 20,
-                headingRowColor: MaterialStateProperty.all(Colors.teal[100]!),
-                dataRowHeight: 64,
+                headingRowColor: WidgetStateProperty.all(Colors.teal[100]!),
+                dataRowMinHeight: 64,
+                dataRowMaxHeight: 64,
                 columns: [
                   DataColumn(
                     label: Text(
@@ -666,9 +675,11 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
                           icon: Icon(Icons.edit, color: Colors.teal[700]),
                           onPressed: widget.user['role']?.toLowerCase() == 'admin'
                               ? () {
-                                  // Navigate to EditCompanyScreen
+                                // Navigate to EditCompanyScreen
+                                if (kDebugMode) {
                                   print('Edit company: ${company['company_name']}');
                                 }
+                              }
                               : null,
                           tooltip: 'Edit Company',
                         ),
@@ -750,7 +761,7 @@ class _AddCompanyScreenState extends State<AddCompanyScreen> {
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.45 - 32,
       child: DropdownButtonFormField<String>(
-        value: selectedItem,
+        initialValue: selectedItem,
         decoration: InputDecoration(
           labelText: label,
           labelStyle: TextStyle(fontSize: 14, color: Colors.teal[900]),

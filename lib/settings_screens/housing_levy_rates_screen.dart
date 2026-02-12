@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,13 +12,13 @@ class HousingLevyRatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const HousingLevyRatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _HousingLevyRatesScreenState createState() => _HousingLevyRatesScreenState();
+  State<HousingLevyRatesScreen> createState() => _HousingLevyRatesScreenState();
 }
 
 class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
@@ -81,11 +82,11 @@ class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'housing_levy_rate': double.parse(_housingLevyRateController.text),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'housing_levy_rate': double.parse(_housingLevyRateController.text),
+      // };
 
     //  await widget.apiService.updateHousingLevyRate(data);
 
@@ -113,7 +114,7 @@ class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -134,6 +135,7 @@ class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -148,7 +150,9 @@ class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
         title: 'Housing Levy Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -168,7 +172,7 @@ class _HousingLevyRatesScreenState extends State<HousingLevyRatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

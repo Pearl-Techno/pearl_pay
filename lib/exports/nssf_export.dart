@@ -120,7 +120,7 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
 
       final companies = await widget.apiService.getCompanies();
       final employees = await widget.apiService.getEmployeeList(userCompanyId);
-      final salaries = await widget.apiService.getSalaries(userCompanyId);
+      final salaries = await widget.apiService.getSalaries(userCompanyId, month: selectedMonth, year: selectedYear);
 
       // Find the user's company in fetched companies
       final userCompany = companies.firstWhere(
@@ -277,30 +277,46 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
       }
 
       final csv = const ListToCsvConverter().convert(rows);
-      final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/$fileName';
+      String filePath;
+      if (Platform.isWindows) {
+        const String directoryPath = r'C:\payroll exports';
+        final directory = Directory(directoryPath);
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        filePath = '$directoryPath\\$fileName';
+      } else {
+        final directory = await getTemporaryDirectory();
+        filePath = '${directory.path}/$fileName';
+      }
       final file = File(filePath);
 
       await file.writeAsString(csv);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to export: $e'),
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: () => _exportToCSV(exportType),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported to $filePath'),
+            backgroundColor: Colors.teal[700],
           ),
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to export: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _exportToCSV(exportType),
+            ),
+          ),
+        );
+      }
     } finally {
-      setState(() => _isExporting = false);
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
     }
   }
 
@@ -549,9 +565,10 @@ class _NSSFExportDetailsPageState extends State<_NSSFExportDetailsPage> {
                                         scrollDirection: Axis.vertical,
                                         child: DataTable(
                                           columnSpacing: 16,
-                                          dataRowHeight: 60,
+                                          dataRowMinHeight: 60,
+                                          dataRowMaxHeight: 60,
                                           headingRowColor:
-                                              MaterialStateProperty.all(
+                                              WidgetStateProperty.all(
                                                   Colors.teal[100]),
                                           columns: [
                                             DataColumn(

@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,7 +16,7 @@ class SendFeedbackScreen extends StatefulWidget {
   });
 
   @override
-  _SendFeedbackScreenState createState() => _SendFeedbackScreenState();
+  State<SendFeedbackScreen> createState() => _SendFeedbackScreenState();
 }
 
 class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
@@ -57,6 +58,8 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
         'company_id': widget.user['company_id']?.toString() ?? 'N/A',
       });
 
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Feedback submitted successfully'),
@@ -67,6 +70,8 @@ class _SendFeedbackScreenState extends State<SendFeedbackScreen> {
       _titleController.clear();
       _feedbackController.clear();
     } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to submit feedback: $e'),
@@ -104,6 +109,8 @@ ${_feedbackController.text}
     try {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
+        if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Opened email client'),
@@ -117,6 +124,8 @@ ${_feedbackController.text}
         throw 'Could not launch email client';
       }
     } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to open email client: $e'),
@@ -138,10 +147,10 @@ ${_feedbackController.text}
         title: 'Send Feedback',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          developer.log('Notifications tapped', name: 'SendFeedbackScreen');
         },
         onProfileTap: () {
-          print('Profile tapped');
+          developer.log('Profile tapped', name: 'SendFeedbackScreen');
         },
       ),
       body: Container(

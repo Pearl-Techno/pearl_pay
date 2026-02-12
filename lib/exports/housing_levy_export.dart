@@ -92,7 +92,7 @@ class HousingLevyExport {
   }) async {
     try {
       final employees = await apiService.getEmployeeList(companyId);
-      final salaries = await apiService.getSalaries(companyId);
+      final salaries = await apiService.getSalaries(companyId, month: month, year: year);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
@@ -219,8 +219,18 @@ class HousingLevyExport {
       }
 
       final csv = const ListToCsvConverter().convert(rows);
-      final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/$fileName';
+      String filePath;
+      if (Platform.isWindows) {
+        const String directoryPath = r'C:\payroll exports';
+        final directory = Directory(directoryPath);
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        filePath = '$directoryPath\\$fileName';
+      } else {
+        final directory = await getTemporaryDirectory();
+        filePath = '${directory.path}/$fileName';
+      }
       final file = File(filePath);
 
       await file.writeAsString(csv);
@@ -292,7 +302,7 @@ class _HousingLevyExportDetailsPageState
     try {
       final employees =
           await widget.apiService.getEmployeeList(effectiveCompanyId);
-      final salaries = await widget.apiService.getSalaries(effectiveCompanyId);
+      final salaries = await widget.apiService.getSalaries(effectiveCompanyId, month: selectedMonth, year: selectedYear);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
@@ -376,6 +386,8 @@ class _HousingLevyExportDetailsPageState
         month: selectedMonth,
       );
 
+      if (!mounted) return '';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Exported to $filePath'),
@@ -384,6 +396,8 @@ class _HousingLevyExportDetailsPageState
       );
       return filePath;
     } catch (e) {
+      if (!mounted) return '';
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to export: $e'),
@@ -643,9 +657,10 @@ class _HousingLevyExportDetailsPageState
                                         scrollDirection: Axis.vertical,
                                         child: DataTable(
                                           columnSpacing: 16,
-                                          dataRowHeight: 60,
+                                          dataRowMinHeight: 60,
+                                          dataRowMaxHeight: 60,
                                           headingRowColor:
-                                              MaterialStateProperty.all(
+                                              WidgetStateProperty.all(
                                                   Colors.teal[100]),
                                           columns: const [
                                             DataColumn(

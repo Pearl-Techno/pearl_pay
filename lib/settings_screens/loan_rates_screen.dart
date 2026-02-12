@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class LoanRatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const LoanRatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _LoanRatesScreenState createState() => _LoanRatesScreenState();
+  State<LoanRatesScreen> createState() => _LoanRatesScreenState();
 }
 
 class _LoanRatesScreenState extends State<LoanRatesScreen> {
@@ -58,17 +59,19 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
         _loanRateController.text = rate.toString();
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading Loan rate: $e'),
-          backgroundColor: Colors.red[700],
-          action: SnackBarAction(
-            label: 'Retry',
-            textColor: Colors.white,
-            onPressed: _loadLoanRate,
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading Loan rate: $e'),
+            backgroundColor: Colors.red[700],
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _loadLoanRate,
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -85,11 +88,11 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'loan_rate': double.parse(_loanRateController.text),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'loan_rate': double.parse(_loanRateController.text),
+      // };
 
      // await widget.apiService.updateLoanRate(data);
 
@@ -117,7 +120,7 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -138,6 +141,7 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -152,7 +156,9 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
         title: 'Loan Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -172,7 +178,7 @@ class _LoanRatesScreenState extends State<LoanRatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

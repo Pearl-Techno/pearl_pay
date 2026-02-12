@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,8 +6,20 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/user.dart';
 import '../services/services.dart';
+import '../widgets/custom_app_bar.dart';
 
-// DeductionsScreen: Allows admins to add and view employee deductions
+// Constants
+class DeductionsConstants {
+  static const Color primaryColor = Color(0xFF0D47A1);
+  static const Color secondaryColor = Color(0xFF1976D2);
+  static const Color accentColor = Color(0xFF00B0FF);
+  static const Color warningColor = Color(0xFFF57C00);
+  static const Color backgroundColor = Color(0xFFF5F9FF);
+  static const Color cardColor = Color(0xFFFFFFFF);
+  static const Color textColor = Color(0xFF1A237E);
+  static const Color subtitleColor = Color(0xFF546E7A);
+}
+
 class DeductionsScreen extends StatefulWidget {
   final User user;
   final ApiService apiService;
@@ -35,49 +46,23 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _deductions = [];
   List<Map<String, dynamic>> _filteredDeductions = [];
-  bool _isLoadingEmployees = false;
   bool _isLoadingDeductions = false;
   String? _errorMessage;
   int _selectedMonth = DateTime.now().month;
   int _selectedYear = DateTime.now().year;
-  final NumberFormat currencyFormat =
-      NumberFormat.currency(locale: 'en_US', symbol: 'KES ', decimalDigits: 2);
+  final ScrollController _scrollController = ScrollController();
+  int? _editingDeductionId;
+
+  // Statistics
+  double _totalDeductionsAmount = 0.0;
+  int _totalDeductionsCount = 0;
+  double _averageDeductionAmount = 0.0;
 
   @override
   void initState() {
     super.initState();
-    print(
-        'InitState: User role=${widget.user.role}, companyId=${widget.user.companyId}, companyName=${widget.user.companyName}, userId=${widget.user.userId}');
-    if (widget.user.role != 'admin') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        print('Access denied: Non-admin user');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content:
-                  Text('Access denied: Only admins can manage deductions')),
-        );
-        Navigator.pop(context);
-      });
-      return;
-    }
-
-    _companyId = widget.user.companyId;
-    _companyName = widget.user.companyName ?? 'Unknown';
-    print('Initialized: companyId=$_companyId, companyName=$_companyName');
-
-    if (_companyId == null || _companyId! <= 0) {
-      setState(() {
-        _errorMessage = 'No valid company assigned to this user';
-        _isLoadingEmployees = false;
-        _isLoadingDeductions = false;
-      });
-      print('Error: Invalid companyId=$_companyId');
-    } else {
-      _fetchEmployees();
-      _fetchDeductions();
-    }
-
-    _searchController.addListener(_filterDeductions);
+    _initializeScreen();
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
@@ -85,65 +70,84 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
     _descriptionController.dispose();
     _amountController.dispose();
     _searchController.dispose();
-    print('Disposed controllers');
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchEmployees() async {
-    if (_companyId == null || _companyId! <= 0) {
-      print('FetchEmployees: Invalid companyId=$_companyId, aborting');
+  void _initializeScreen() {
+    if (widget.user.role != 'admin') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showErrorSnackBar('Access denied: Only admins can manage deductions');
+        Navigator.pop(context);
+      });
       return;
     }
-    setState(() => _isLoadingEmployees = true);
-    print('Fetching employees for companyId=$_companyId');
+
+    _companyId = widget.user.companyId;
+    _companyName = widget.user.companyName ?? 'Unknown';
+
+    if (_companyId == null || _companyId! <= 0) {
+      setState(() {
+        _errorMessage = 'No valid company assigned to this user';
+        _isLoadingDeductions = false;
+      });
+    } else {
+      _fetchEmployees();
+      _fetchDeductions();
+    }
+  }
+
+  void _onSearchChanged() {
+    _filterDeductions();
+  }
+
+  Future<void> _fetchEmployees() async {
+    if (_companyId == null || _companyId! <= 0) return;
     try {
       final employees = await widget.apiService.getEmployeeList(_companyId!);
-      print('Fetched employees: ${employees.length} records');
+      if (!mounted) return;
       setState(() {
         _employees = employees;
         _selectedEmployeeId = _employees.isNotEmpty
             ? _employees[0]['employee_id'].toString()
             : null;
-        _isLoadingEmployees = false;
         _errorMessage = null;
       });
+
+      // Re-filter deductions to ensure employee names are mapped correctly
+      if (_deductions.isNotEmpty) {
+        _filterDeductions();
+      }
     } catch (e) {
-      print('Error fetching employees: $e');
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load employees: $e';
-        _isLoadingEmployees = false;
       });
     }
   }
 
   Future<void> _fetchDeductions() async {
-    if (_companyId == null || _companyId! <= 0) {
-      print('FetchDeductions: Invalid companyId=$_companyId, aborting');
-      return;
-    }
+    if (_companyId == null || _companyId! <= 0) return;
     setState(() => _isLoadingDeductions = true);
-    print(
-        'Fetching deductions for companyId=$_companyId, month=$_selectedMonth, year=$_selectedYear');
     try {
-      final userId = int.tryParse(widget.user.userId?.toString() ?? '0') ?? 0;
-      print('Using userId=$userId for fetchDeductions');
-      final employeeId = _employees.isNotEmpty
-          ? _employees[0]['employee_id'].toString()
-          : null;
-      if (employeeId == null)
-        throw Exception('No employees available to fetch deductions');
+      // Use fetchDeductionsList method instead of fetchDeductions
+      final deductions = await widget.apiService.fetchDeductionsList(
+        _companyId!,
+        month: _selectedMonth,
+        year: _selectedYear,
+      );
+      
+      if (!mounted) return;
 
-      final deductions = await widget.apiService.fetchDeductions(
-          _companyId!, _selectedMonth, _selectedYear, employeeId);
-      print('Fetched deductions: ${deductions.length} records');
+      _deductions = deductions;
+      _filterDeductions();
+
       setState(() {
-        _deductions = deductions;
-        _filterDeductions();
         _isLoadingDeductions = false;
         _errorMessage = null;
       });
     } catch (e) {
-      print('Error fetching deductions: $e');
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load deductions: $e';
         _isLoadingDeductions = false;
@@ -151,49 +155,71 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
     }
   }
 
+  void _calculateStatistics() {
+    _totalDeductionsAmount = _filteredDeductions.fold(0.0, (sum, deduction) {
+      final amount = deduction['amount'] is String
+          ? double.tryParse(deduction['amount'] as String) ?? 0.0
+          : (deduction['amount']?.toDouble() ?? 0.0);
+      return sum + amount;
+    });
+    
+    _totalDeductionsCount = _filteredDeductions.length;
+    _averageDeductionAmount = _totalDeductionsCount > 0 
+        ? _totalDeductionsAmount / _totalDeductionsCount 
+        : 0.0;
+  }
+
   void _filterDeductions() {
     final query = _searchController.text.toLowerCase();
-    print('Filtering deductions with query="$query"');
     setState(() {
       _filteredDeductions = _deductions.where((deduction) {
+        // Filter by company
+        if (_companyId != null && deduction['company_id'] != null) {
+          if (deduction['company_id'].toString() != _companyId.toString()) {
+            return false;
+          }
+        }
+
         final employee = _employees.firstWhere(
-          (emp) =>
-              emp['employee_id'].toString() ==
-              deduction['employee_id'].toString(),
-          orElse: () => {'fullname': 'Unknown Employee'},
+          (emp) => emp['employee_id'].toString() == deduction['employee_id'].toString(),
+          orElse: () => {},
         );
+
+        if (employee.isEmpty) return false;
+
         final fullname = (employee['fullname']?.toString() ?? '').toLowerCase();
-        final description =
-            (deduction['description']?.toString() ?? '').toLowerCase();
+        final description = (deduction['description']?.toString() ?? '').toLowerCase();
+        final amount = (deduction['amount']?.toString() ?? '').toLowerCase();
+        
         return query.isEmpty ||
             fullname.contains(query) ||
-            description.contains(query);
+            description.contains(query) ||
+            amount.contains(query);
       }).toList();
-      print('Filtered deductions count: ${_filteredDeductions.length}');
+      _calculateStatistics();
     });
   }
 
   Future<void> _selectDate(BuildContext context) async {
-    print('Opening date picker, current date=$_selectedDate');
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate ?? DateTime.now(),
       firstDate: DateTime(2000),
       lastDate: DateTime(2101),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: ColorScheme.light(primary: Colors.teal[700]!),
-          textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(foregroundColor: Colors.teal[700])),
-        ),
-        child: child!,
-      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(primary: DeductionsConstants.primaryColor),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(foregroundColor: DeductionsConstants.primaryColor),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null) {
-      print('Selected date: $picked');
       setState(() => _selectedDate = picked);
-    } else {
-      print('Date selection cancelled');
     }
   }
 
@@ -201,106 +227,171 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
     if (!_formKey.currentState!.validate() ||
         _selectedEmployeeId == null ||
         _selectedDate == null) {
-      print(
-          'Form validation failed: selectedEmployeeId=$_selectedEmployeeId, selectedDate=$_selectedDate');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Please complete all required fields and select a date')),
-      );
+      _showErrorSnackBar('Please complete all required fields and select a date');
       return;
     }
 
-    final employeeId = _selectedEmployeeId!;
-    final description = _descriptionController.text;
-    final amount = double.tryParse(_amountController.text) ?? 0.0;
-    final date = _selectedDate!;
-
     final deductionData = {
-      'employee_id': employeeId,
+      'employee_id': _selectedEmployeeId!,
       'company_id': _companyId,
-      'description': description,
-      'amount': amount,
-      'date': DateFormat('yyyy-MM-dd').format(date),
+      'description': _descriptionController.text.trim(),
+      'amount': double.tryParse(_amountController.text) ?? 0.0,
+      'date': DateFormat('yyyy-MM-dd').format(_selectedDate!),
     };
-    print('Submitting deduction: $deductionData');
 
     try {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: const Text('Adding deduction...'),
-            backgroundColor: Colors.teal[700]),
+      // Add loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Saving deduction...'),
+            ],
+          ),
+        ),
       );
 
-      final userId = int.tryParse(widget.user.userId?.toString() ?? '0') ?? 0;
-      print('Using userId=$userId for addDeduction');
-      await widget.apiService.addDeduction(deductionData, userId);
-      print('Deduction added successfully');
+      if (_editingDeductionId != null) {
+        await widget.apiService.updateDeduction(_editingDeductionId!, deductionData);
+      } else {
+        await widget.apiService.addDeduction(deductionData, _companyId!);
+      }
 
-      final deductionDate = DateTime.parse(deductionData['date'] as String);
+      if (!mounted) return;
+
+      // Update month/year to match the deduction date
       setState(() {
-        _selectedMonth = deductionDate.month;
-        _selectedYear = deductionDate.year;
+        _selectedMonth = _selectedDate!.month;
+        _selectedYear = _selectedDate!.year;
       });
+      
+      // Refresh the deductions list
       await _fetchDeductions();
 
+      if (!mounted) return;
+
+      // Find employee name for success message
       final employee = _employees.firstWhere(
-        (emp) => emp['employee_id'].toString() == employeeId,
-        orElse: () => {'fullname': 'Unknown'},
+        (emp) => emp['employee_id'].toString() == _selectedEmployeeId,
+        orElse: () => {'fullname': 'Unknown Employee'},
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Deduction Added: ${employee['fullname']}, $description, ${currencyFormat.format(amount)}, ${DateFormat.yMMMd().format(date)}'),
-          backgroundColor: Colors.teal[700],
-        ),
+      
+      // Remove loading dialog
+      Navigator.pop(context);
+      
+      _showSuccessSnackBar(
+        _editingDeductionId != null
+            ? 'Deduction updated successfully'
+            : 'Deduction added successfully for ${employee['fullname']}'
       );
 
-      _descriptionController.clear();
-      _amountController.clear();
-      setState(() {
-        _selectedEmployeeId = _employees.isNotEmpty
-            ? _employees[0]['employee_id'].toString()
-            : null;
-        _selectedDate = null;
-      });
+      // Reset form
+      _resetForm();
+      
     } catch (e) {
-      print('Error submitting deduction: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to add deduction: $e'),
-          backgroundColor: Colors.red,
-          action: SnackBarAction(label: 'Retry', onPressed: _submitForm),
-        ),
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showErrorSnackBar('Failed to add deduction: $e');
+    }
+  }
+
+  void _resetForm() {
+    _descriptionController.clear();
+    _amountController.clear();
+    setState(() {
+      _selectedEmployeeId = _employees.isNotEmpty
+          ? _employees[0]['employee_id'].toString()
+          : null;
+      _selectedDate = null;
+      _editingDeductionId = null;
+    });
+  }
+
+  void _showDeductionForm({Map<String, dynamic>? deduction}) {
+    if (deduction != null) {
+      setState(() {
+        _editingDeductionId = int.tryParse(deduction['id'].toString());
+        _selectedEmployeeId = deduction['employee_id'].toString();
+        _descriptionController.text = deduction['description'] ?? '';
+        _amountController.text = deduction['amount'].toString();
+        _selectedDate = DateTime.parse(deduction['date']);
+      });
+    } else {
+      _resetForm();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildAddDeductionSheet(),
+    );
+  }
+
+  Future<void> _confirmDeleteDeduction(Map<String, dynamic> deduction) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Deduction'),
+        content: Text('Are you sure you want to delete the deduction for ${deduction['description']}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _deleteDeduction(int.tryParse(deduction['id'].toString()) ?? 0);
+    }
+  }
+
+  Future<void> _deleteDeduction(int id) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
+
+      await widget.apiService.deleteDeduction(id);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      _showSuccessSnackBar('Deduction deleted successfully');
+      _fetchDeductions();
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showErrorSnackBar('Failed to delete deduction: $e');
     }
   }
 
   Future<void> _exportToCSV() async {
     if (_filteredDeductions.isEmpty) {
-      print('No deductions to export');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No deductions available to export')),
-      );
+      _showErrorSnackBar('No deductions available to export');
       return;
     }
-    print('Exporting ${_filteredDeductions.length} deductions to CSV');
 
     try {
-      final headers = [
-        'Company',
-        'Employee',
-        'Description',
-        'Amount (KES)',
-        'Date'
-      ];
+      final headers = ['Company', 'Employee', 'Description', 'Amount (KES)', 'Date'];
       final rows = [
         headers,
         ..._filteredDeductions.map((deduction) {
           final employee = _employees.firstWhere(
-            (emp) =>
-                emp['employee_id'].toString() ==
-                deduction['employee_id'].toString(),
+            (emp) => emp['employee_id'].toString() == deduction['employee_id'].toString(),
             orElse: () => {'fullname': 'Unknown Employee'},
           );
           final dateStr = deduction['date'] != null
@@ -313,7 +404,7 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
             _companyName ?? 'Unknown',
             employee['fullname'] ?? 'Unknown',
             deduction['description'] ?? 'Unknown',
-            currencyFormat.format(amount),
+            amount.toStringAsFixed(2),
             dateStr,
           ];
         }),
@@ -321,570 +412,1029 @@ class _DeductionsScreenState extends State<DeductionsScreen> {
 
       final csv = const ListToCsvConverter().convert(rows);
       final directory = await getApplicationDocumentsDirectory();
-      final fileName =
-          'deductions_${_companyName?.replaceAll(' ', '_') ?? 'unknown'}_${_selectedYear}_${_selectedMonth.toString().padLeft(2, '0')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+      final fileName = 'deductions_${_companyName?.replaceAll(' ', '_') ?? 'unknown'}_${_selectedYear}_${_selectedMonth.toString().padLeft(2, '0')}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
       final filePath = '${directory.path}/$fileName';
       await File(filePath).writeAsString(csv);
-      print('CSV exported to: $filePath');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Deductions exported to $filePath'),
-            backgroundColor: Colors.teal[700]),
-      );
+      _showSuccessSnackBar('Deductions exported to $filePath');
     } catch (e) {
-      print('Error exporting to CSV: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export to CSV: $e')),
-      );
+      _showErrorSnackBar('Failed to export to CSV: $e');
     }
   }
 
-  Widget _buildDropdown<T>({
-    required String label,
-    required T? value,
-    required List<T> items,
-    required String Function(T) itemBuilder,
-    required ValueChanged<T?> onChanged,
-    bool isEnabled = true,
-    String? Function(T?)? validator,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: TextStyle(
-                color: Colors.teal[900],
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
-        DropdownButtonFormField<T>(
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.teal[200]!)),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.teal[200]!)),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: Colors.teal[700]!)),
-            filled: true,
-            fillColor: Colors.white,
-          ),
-          value: value,
-          items: items
-              .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(itemBuilder(item),
-                      style: TextStyle(color: Colors.teal[900]))))
-              .toList(),
-          onChanged: isEnabled ? onChanged : null,
-          validator: validator ??
-              (value) => value == null ? 'Please select $label' : null,
-          dropdownColor: Colors.white,
-          icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-          isExpanded: true,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    bool isNumber = false,
-    String? hintText,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.teal[900]),
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.teal[200]!)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.teal[200]!)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide(color: Colors.teal[700]!)),
-        filled: true,
-        fillColor: Colors.white,
-        hintText: hintText,
-        hintStyle: TextStyle(color: Colors.grey[600]),
-        prefixText: isNumber ? 'KES ' : null,
-        prefixStyle: isNumber ? TextStyle(color: Colors.teal[900]) : null,
-      ),
-      validator: (value) {
-        if (value == null || value.isEmpty) return 'Please enter $label';
-        if (isNumber) {
-          final num = double.tryParse(value);
-          if (num == null || num <= 0)
-            return 'Please enter a valid positive amount';
-          if (num > 1000000) return 'Amount cannot exceed KES 1,000,000';
-        } else if (value.length > 100)
-          return 'Description cannot exceed 100 characters';
-        return null;
-      },
-      style: TextStyle(color: Colors.grey[800]),
-    );
-  }
-
-  Widget _buildDatePicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Deduction Date',
-            style: TextStyle(
-                color: Colors.teal[900],
-                fontSize: 14,
-                fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
           children: [
-            Text(
-              _selectedDate == null
-                  ? 'No date selected'
-                  : 'Date: ${DateFormat.yMMMd().format(_selectedDate!)}',
-              style: TextStyle(
-                  color: _selectedDate == null
-                      ? Colors.grey[600]
-                      : Colors.teal[900],
-                  fontSize: 16),
-            ),
-            ElevatedButton(
-              onPressed: () => _selectDate(context),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal[700],
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8))),
-              child: const Text('Select Date'),
-            ),
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
           ],
         ),
-        if (_selectedDate == null)
-          Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text('Please select a date',
-                  style: TextStyle(color: Colors.red[700], fontSize: 12))),
-      ],
+        backgroundColor: Colors.red[700],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: DeductionsConstants.primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    print(
-        'Building UI: companyName=$_companyName, errorMessage=$_errorMessage, employees=${_employees.length}, deductions=${_deductions.length}');
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            title: Text('Deductions - $_companyName'),
-            backgroundColor: Colors.teal[800],
-            pinned: true,
-            actions: [
-              IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                  onPressed: () {
-                    print('Refresh button pressed');
-                    _fetchEmployees();
-                    _fetchDeductions();
-                  },
-                  tooltip: 'Refresh Data'),
-              IconButton(
-                  icon: const Icon(Icons.notifications, color: Colors.white),
-                  onPressed: () => print('Notifications tapped'),
-                  tooltip: 'Notifications'),
-              IconButton(
-                  icon: const Icon(Icons.person, color: Colors.white),
-                  onPressed: () => print('Profile tapped'),
-                  tooltip: 'Profile'),
-            ],
-          ),
-          SliverToBoxAdapter(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [Colors.teal[50]!, Colors.teal[100]!],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter),
+      backgroundColor: DeductionsConstants.backgroundColor,
+      appBar: CustomAppBar(
+        title: 'Deductions Management',
+        backgroundColor: DeductionsConstants.primaryColor,
+        onNotificationTap: () {
+          // Handle notifications
+        },
+        onProfileTap: () {
+          // Handle profile
+        },
+      ),
+      body: Column(
+        children: [
+          // Header Section
+          _buildHeaderSection(),
+          
+          // Content Area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  _buildSearchAndFilters(),
+                  const SizedBox(height: 16),
+                  _buildStatisticsCards(),
+                  const SizedBox(height: 16),
+                  _buildContentSection(),
+                ],
               ),
-              child: _errorMessage != null
-                  ? Center(
-                      child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(_errorMessage!,
-                                style: TextStyle(
-                                    color: Colors.teal[900], fontSize: 16)),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () {
-                                print('Retry button pressed');
-                                _fetchEmployees();
-                                _fetchDeductions();
-                              },
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.teal[700],
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8))),
-                              child: const Text('Retry'),
-                            ),
-                          ]),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Card(
-                              elevation: 4,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                      colors: [Colors.white, Colors.teal[50]!],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                padding: const EdgeInsets.all(16.0),
-                                child: Form(
-                                  key: _formKey,
-                                  child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Company: $_companyName',
-                                            style: TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.teal[900])),
-                                        const SizedBox(height: 16.0),
-                                        _buildDropdown(
-                                          label: 'Employee',
-                                          value: _selectedEmployeeId,
-                                          items: _isLoadingEmployees ||
-                                                  _employees.isEmpty
-                                              ? []
-                                              : _employees
-                                                  .map((e) => e['employee_id']
-                                                      .toString())
-                                                  .toList(),
-                                          itemBuilder: (id) {
-                                            final employee =
-                                                _employees.firstWhere(
-                                                    (emp) =>
-                                                        emp['employee_id']
-                                                            .toString() ==
-                                                        id,
-                                                    orElse: () => {
-                                                          'fullname': 'Unknown'
-                                                        });
-                                            return '${employee['employee_id']} - ${employee['fullname']}';
-                                          },
-                                          onChanged: (value) => value != null
-                                              ? setState(() =>
-                                                  _selectedEmployeeId = value)
-                                              : null,
-                                          isEnabled: !_isLoadingEmployees &&
-                                              _employees.isNotEmpty,
-                                        ),
-                                        if (_isLoadingEmployees)
-                                          Padding(
-                                              padding: const EdgeInsets.only(
-                                                  top: 8.0),
-                                              child: CircularProgressIndicator(
-                                                  color: Colors.teal[700])),
-                                        if (_employees.isEmpty &&
-                                            !_isLoadingEmployees)
-                                          Padding(
-                                              padding: const EdgeInsets.only(
-                                                  top: 8.0),
-                                              child: Text(
-                                                  'No employees available for this company',
-                                                  style: TextStyle(
-                                                      color: Colors.red[700]))),
-                                        const SizedBox(height: 16.0),
-                                        _buildTextField(
-                                            controller: _descriptionController,
-                                            label: 'Description',
-                                            hintText:
-                                                'e.g., Loan Repayment, Advance Deduction'),
-                                        const SizedBox(height: 16.0),
-                                        _buildTextField(
-                                            controller: _amountController,
-                                            label: 'Amount',
-                                            isNumber: true,
-                                            hintText: 'e.g., 5000.00'),
-                                        const SizedBox(height: 16.0),
-                                        _buildDatePicker(),
-                                        const SizedBox(height: 24.0),
-                                        SizedBox(
-                                          width: double.infinity,
-                                          child: ElevatedButton(
-                                            onPressed: _isLoadingEmployees ||
-                                                    _isLoadingDeductions ||
-                                                    _employees.isEmpty
-                                                ? null
-                                                : _submitForm,
-                                            style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    Colors.teal[700],
-                                                foregroundColor: Colors.white,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        vertical: 16.0),
-                                                shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8))),
-                                            child: const Text('Add Deduction',
-                                                style: TextStyle(fontSize: 16)),
-                                          ),
-                                        ),
-                                      ]),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16.0),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: _exportToCSV,
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.teal[700],
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 16.0),
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(8))),
-                                child: const Text('Export to CSV',
-                                    style: TextStyle(fontSize: 16)),
-                              ),
-                            ),
-                          ]),
-                    ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _showDeductionForm(),
+        backgroundColor: DeductionsConstants.primaryColor,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add),
+        label: const Text('Add Deduction'),
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [DeductionsConstants.primaryColor, DeductionsConstants.secondaryColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                        colors: [Colors.white, Colors.teal[50]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withAlpha(51),
+                    shape: BoxShape.circle,
                   ),
-                  padding: const EdgeInsets.all(16.0),
+                  child: Icon(
+                    Icons.money_off,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Expanded(
-                            child: _buildDropdown(
-                          label: 'Month',
-                          value: _selectedMonth,
-                          items: List.generate(12, (index) => index + 1),
-                          itemBuilder: (month) => DateFormat('MMMM')
-                              .format(DateTime(_selectedYear, month)),
-                          onChanged: (value) => value != null
-                              ? setState(() {
-                                  _selectedMonth = value;
-                                  _fetchDeductions();
-                                })
-                              : null,
-                        )),
-                        const SizedBox(width: 16),
-                        Expanded(
-                            child: _buildDropdown(
-                          label: 'Year',
-                          value: _selectedYear,
-                          items: List.generate(
-                              10, (index) => DateTime.now().year - index),
-                          itemBuilder: (year) => year.toString(),
-                          onChanged: (value) => value != null
-                              ? setState(() {
-                                  _selectedYear = value;
-                                  _fetchDeductions();
-                                })
-                              : null,
-                        )),
-                      ]),
-                      const SizedBox(height: 16.0),
-                      TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          labelText: 'Search',
-                          labelStyle: TextStyle(color: Colors.teal[900]),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: Colors.teal[200]!)),
-                          enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: Colors.teal[200]!)),
-                          focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: Colors.teal[700]!)),
-                          filled: true,
-                          fillColor: Colors.white,
-                          hintText: 'Search by name or description',
-                          hintStyle: TextStyle(color: Colors.grey[600]),
-                          suffixIcon:
-                              Icon(Icons.search, color: Colors.teal[700]),
+                      Text(
+                        'Deductions Management',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
-                        style: TextStyle(color: Colors.grey[800]),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Manage employee deductions and payroll adjustments',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(230),
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildDateFilters(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateFilters() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildFilterDropdown(
+            value: _selectedMonth,
+            items: List.generate(12, (index) => index + 1),
+            labelText: 'Month',
+            itemBuilder: (month) => DateFormat('MMMM').format(DateTime(_selectedYear, month)),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _selectedMonth = value;
+                });
+                _fetchDeductions();
+              }
+            },
+            icon: Icons.calendar_month,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildFilterDropdown(
+            value: _selectedYear,
+            items: List.generate(5, (index) => DateTime.now().year - index),
+            labelText: 'Year',
+            itemBuilder: (year) => year.toString(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() {
+                  _selectedYear = value;
+                });
+                _fetchDeductions();
+              }
+            },
+            icon: Icons.event,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 8,
+                offset: Offset(0, 2),
               ),
+            ],
+          ),
+          child: IconButton(
+            onPressed: () {
+              _fetchEmployees();
+              _fetchDeductions();
+            },
+            icon: Icon(Icons.refresh, color: DeductionsConstants.primaryColor),
+            style: IconButton.styleFrom(
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
-          SliverFillRemaining(
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                        colors: [Colors.white, Colors.teal[50]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.5),
-                      child: _isLoadingDeductions
-                          ? Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.teal[700]))
-                          : _filteredDeductions.isEmpty
-                              ? Center(
-                                  child: Text(
-                                      'No deductions for selected filters',
-                                      style: TextStyle(
-                                          color: Colors.teal[900],
-                                          fontSize: 16)))
-                              : PaginatedDataTable(
-                                  header: Text('Deductions',
-                                      style:
-                                          TextStyle(color: Colors.teal[900])),
-                                  columns: [
-                                    DataColumn(
-                                        label: Text('Company',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.teal[900],
-                                                fontSize: 14))),
-                                    DataColumn(
-                                        label: Text('Employee',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.teal[900],
-                                                fontSize: 14))),
-                                    DataColumn(
-                                        label: Text('Description',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.teal[900],
-                                                fontSize: 14))),
-                                    DataColumn(
-                                        label: Text('Amount (KES)',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.teal[900],
-                                                fontSize: 14))),
-                                    DataColumn(
-                                        label: Text('Date',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                color: Colors.teal[900],
-                                                fontSize: 14))),
-                                  ],
-                                  source: DeductionsDataSource(
-                                      _filteredDeductions,
-                                      _employees,
-                                      _companyName ?? 'Unknown'),
-                                  rowsPerPage: 5,
-                                  columnSpacing: 16,
-                                  dataRowHeight: 60,
-                                  headingRowColor: MaterialStateProperty.all(
-                                      Colors.teal[100]),
-                                ),
-                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchAndFilters() {
+    return Container(
+      decoration: BoxDecoration(
+        color: DeductionsConstants.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          hintText: 'Search deductions by employee or description...',
+          hintStyle: TextStyle(color: DeductionsConstants.subtitleColor),
+          prefixIcon: Icon(Icons.search, color: DeductionsConstants.subtitleColor),
+          border: InputBorder.none,
+          filled: true,
+          fillColor: Colors.transparent,
+        ),
+        style: TextStyle(
+          color: DeductionsConstants.textColor,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatisticsCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            title: 'Total Deductions',
+            value: 'KES ${_totalDeductionsAmount.toStringAsFixed(2)}',
+            icon: Icons.money_off,
+            color: DeductionsConstants.warningColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard(
+            title: 'Deductions Count',
+            value: _totalDeductionsCount.toString(),
+            icon: Icons.list_alt,
+            color: DeductionsConstants.accentColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard(
+            title: 'Average Deduction',
+            value: 'KES ${_averageDeductionAmount.toStringAsFixed(2)}',
+            icon: Icons.trending_down,
+            color: DeductionsConstants.primaryColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: DeductionsConstants.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withAlpha(26),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: DeductionsConstants.subtitleColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: DeductionsConstants.textColor,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class DeductionsDataSource extends DataTableSource {
-  final List<Map<String, dynamic>> deductions;
-  final List<Map<String, dynamic>> employees;
-  final String companyName;
-  final NumberFormat currencyFormat =
-      NumberFormat.currency(locale: 'en_US', symbol: 'KES ', decimalDigits: 2);
-
-  DeductionsDataSource(this.deductions, this.employees, this.companyName);
-
-  @override
-  DataRow getRow(int index) {
-    final deduction = deductions[index];
-    print('Rendering row $index: deduction=$deduction');
-    final employee = employees.firstWhere(
-      (emp) =>
-          emp['employee_id'].toString() == deduction['employee_id'].toString(),
-      orElse: () => {'fullname': 'Unknown Employee'},
+  Widget _buildContentSection() {
+    return Expanded(
+      child: Container(
+        decoration: BoxDecoration(
+          color: DeductionsConstants.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D000000),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: _buildContent(),
+        ),
+      ),
     );
-    final dateStr = deduction['date'] != null
-        ? DateFormat.yMMMd().format(DateTime.parse(deduction['date']))
-        : 'N/A';
-    final amount = deduction['amount'] is String
-        ? double.tryParse(deduction['amount']) ?? 0.0
-        : (deduction['amount']?.toDouble() ?? 0.0);
-    return DataRow(cells: [
-      DataCell(Text(companyName, style: TextStyle(color: Colors.grey[800]))),
-      DataCell(Text(employee['fullname'] ?? 'Unknown',
-          style: TextStyle(color: Colors.grey[800]))),
-      DataCell(Text(deduction['description'] ?? 'Unknown',
-          style: TextStyle(color: Colors.grey[800]))),
-      DataCell(Text(currencyFormat.format(amount),
-          style: TextStyle(color: Colors.grey[800]))),
-      DataCell(Text(dateStr, style: TextStyle(color: Colors.grey[800]))),
-    ]);
   }
 
-  @override
-  int get rowCount => deductions.length;
+  Widget _buildContent() {
+    if (_isLoadingDeductions) {
+      return _buildLoadingState();
+    }
+    
+    if (_errorMessage != null) {
+      return _buildErrorState();
+    }
+    
+    if (_filteredDeductions.isEmpty) {
+      return _buildEmptyState();
+    }
+    
+    return Column(
+      children: [
+        _buildTableHeader(),
+        Expanded(child: _buildDeductionsTable()),
+      ],
+    );
+  }
 
-  @override
-  bool get isRowCountApproximate => false;
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            color: DeductionsConstants.primaryColor,
+            strokeWidth: 2,
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Loading Deductions...',
+            style: TextStyle(
+              color: DeductionsConstants.subtitleColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-  @override
-  int get selectedRowCount => 0;
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: DeductionsConstants.subtitleColor.withAlpha(128),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Error Loading Data',
+              style: TextStyle(
+                color: DeductionsConstants.textColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _errorMessage!,
+              style: TextStyle(
+                color: DeductionsConstants.subtitleColor,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                _fetchEmployees();
+                _fetchDeductions();
+              },
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DeductionsConstants.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.money_off_outlined,
+              size: 80,
+              color: DeductionsConstants.subtitleColor.withAlpha(128),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No Deductions Found',
+              style: TextStyle(
+                color: DeductionsConstants.textColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No deductions recorded for the selected filters',
+              style: TextStyle(
+                color: DeductionsConstants.subtitleColor,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try changing the filters or add new deductions',
+              style: TextStyle(
+                color: DeductionsConstants.subtitleColor,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: DeductionsConstants.backgroundColor,
+        border: Border(
+          bottom: BorderSide(color: DeductionsConstants.backgroundColor.withAlpha(128)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.list_alt, color: DeductionsConstants.primaryColor, size: 20),
+          const SizedBox(width: 12),
+          Text(
+            'Deductions Records',
+            style: TextStyle(
+              color: DeductionsConstants.textColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '${_filteredDeductions.length} records',
+            style: TextStyle(
+              color: DeductionsConstants.subtitleColor,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(width: 16),
+          IconButton(
+            onPressed: _exportToCSV,
+            icon: Icon(Icons.download, color: DeductionsConstants.primaryColor),
+            tooltip: 'Export to CSV',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeductionsTable() {
+    return Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: true,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 24,            
+            dataRowMinHeight: 60,
+            dataRowMaxHeight: 60,
+            headingRowHeight: 56,
+            horizontalMargin: 24,
+            headingTextStyle: TextStyle(
+              color: DeductionsConstants.textColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+            dataTextStyle: TextStyle(
+              color: DeductionsConstants.textColor,
+              fontSize: 12,
+            ),
+            headingRowColor: WidgetStateProperty.all(DeductionsConstants.backgroundColor),
+            columns: _buildTableColumns(),
+            rows: _filteredDeductions.asMap().entries.map((entry) {
+              final index = entry.key;
+              final deduction = entry.value;
+              return DataRow(
+                color: WidgetStateProperty.all(
+                  index % 2 == 0 ? DeductionsConstants.cardColor : DeductionsConstants.backgroundColor,
+                ),
+                cells: [
+                  _buildEmployeeCell(deduction),
+                  _buildDataCell(deduction['description'] ?? 'No description'),
+                  _buildAmountCell(deduction['amount']),
+                  _buildDateCell(deduction['date']),
+                  _buildActionsCell(deduction),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<DataColumn> _buildTableColumns() {
+    return [
+      _buildDataColumn('Employee'),
+      _buildDataColumn('Description'),
+      _buildDataColumn('Amount (KES)'),
+      _buildDataColumn('Date'),
+      _buildDataColumn('Actions'),
+    ];
+  }
+
+  DataColumn _buildDataColumn(String label) {
+    return DataColumn(
+      label: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          label,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: DeductionsConstants.textColor,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildEmployeeCell(Map<String, dynamic> deduction) {
+    final employee = _employees.firstWhere(
+      (emp) => emp['employee_id'].toString() == deduction['employee_id'].toString(),
+      orElse: () => {'fullname': 'Unknown Employee'},
+    );
+    return _buildDataCell(employee['fullname'] ?? 'Unknown');
+  }
+
+  DataCell _buildDataCell(String text) {
+    return DataCell(
+      Tooltip(
+        message: text,
+        child: Text(
+          text,
+          style: TextStyle(
+            color: DeductionsConstants.textColor,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildAmountCell(dynamic amount) {
+    final value = amount is String
+        ? double.tryParse(amount) ?? 0.0
+        : (amount?.toDouble() ?? 0.0);
+    final formattedValue = 'KES ${value.toStringAsFixed(2)}';
+    
+    return DataCell(
+      Tooltip(
+        message: formattedValue,
+        child: Text(
+          formattedValue,
+          style: TextStyle(
+            color: DeductionsConstants.warningColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildDateCell(String? dateString) {
+    String formattedDate = 'N/A';
+    if (dateString != null) {
+      try {
+        final date = DateTime.tryParse(dateString);
+        formattedDate = date != null ? DateFormat('MMM dd, yyyy').format(date) : 'N/A';
+      } catch (e) {
+        formattedDate = 'N/A';
+      }
+    }
+    
+    return _buildDataCell(formattedDate);
+  }
+
+  DataCell _buildActionsCell(Map<String, dynamic> deduction) {
+    return DataCell(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.edit, size: 20, color: DeductionsConstants.secondaryColor),
+            onPressed: () => _showDeductionForm(deduction: deduction),
+            tooltip: 'Edit',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+            onPressed: () => _confirmDeleteDeduction(deduction),
+            tooltip: 'Delete',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterDropdown<T>({
+    required T? value,
+    required List<T> items,
+    required String labelText,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+    required IconData icon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: DeductionsConstants.cardColor,
+        borderRadius: BorderRadius.circular(12),        
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x0D000000),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButtonFormField<T>(
+        initialValue: value,
+        items: items.map((item) => DropdownMenuItem(
+          value: item,
+          child: Text(
+            itemBuilder(item),
+            style: TextStyle(
+              color: DeductionsConstants.textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        )).toList(),
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          labelText: labelText,
+          labelStyle: TextStyle(color: DeductionsConstants.subtitleColor, fontSize: 14),
+          prefixIcon: Icon(icon, color: DeductionsConstants.primaryColor, size: 20),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: DeductionsConstants.primaryColor, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.transparent,
+        ),
+        dropdownColor: DeductionsConstants.cardColor,
+        icon: Icon(Icons.arrow_drop_down, color: DeductionsConstants.primaryColor),
+        style: TextStyle(color: DeductionsConstants.textColor, fontSize: 14),
+      ),
+    );
+  }
+
+  Widget _buildAddDeductionSheet() {
+    return Container(
+      decoration: BoxDecoration(
+        color: DeductionsConstants.cardColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              decoration: BoxDecoration(
+                color: DeductionsConstants.subtitleColor.withAlpha(77),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _editingDeductionId != null ? 'Edit Deduction' : 'Add New Deduction',
+              style: TextStyle(
+                color: DeductionsConstants.textColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildSheetEmployeeDropdown(),
+                      const SizedBox(height: 16),
+                      _buildSheetTextField(
+                        controller: _descriptionController,
+                        label: 'Description',
+                        hintText: 'e.g., Loan Repayment, Advance Deduction',
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSheetTextField(
+                        controller: _amountController,
+                        label: 'Amount',
+                        isNumber: true,
+                        hintText: 'e.g., 5000.00',
+                      ),
+                      const SizedBox(height: 16),
+                      _buildSheetDatePicker(),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _submitForm,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: DeductionsConstants.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(_editingDeductionId != null ? 'Update Deduction' : 'Add Deduction'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSheetEmployeeDropdown() {
+    if (_employees.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: DeductionsConstants.backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            'No employees available. Please try refreshing.',
+            style: TextStyle(color: DeductionsConstants.subtitleColor),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Select Employee *',
+          style: TextStyle(
+            color: DeductionsConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: DeductionsConstants.subtitleColor.withAlpha(77)),
+          ),
+          child: DropdownButtonFormField<String>(
+            initialValue: _selectedEmployeeId,
+            items: _employees.map((employee) {
+              return DropdownMenuItem<String>(
+                value: employee['employee_id']?.toString(),
+                child: Text(
+                  '${employee['employee_id']} - ${employee['fullname']}',
+                  style: TextStyle(color: DeductionsConstants.textColor),
+                ),
+              );
+            }).toList(),
+            onChanged: (newValue) {
+              if (newValue != null) {
+                setState(() {
+                  _selectedEmployeeId = newValue;
+                });
+              }
+            },
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              prefixIcon: Icon(Icons.person, color: DeductionsConstants.primaryColor),
+              border: InputBorder.none,
+              filled: true,
+              fillColor: DeductionsConstants.backgroundColor,
+            ),
+            validator: (value) => value == null ? 'Please select an employee' : null,
+            dropdownColor: DeductionsConstants.cardColor,
+            icon: Icon(Icons.arrow_drop_down, color: DeductionsConstants.primaryColor),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetTextField({
+    required TextEditingController controller,
+    required String label,
+    bool isNumber = false,
+    String? hintText,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label *',
+          style: TextStyle(
+            color: DeductionsConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            hintText: hintText,
+            hintStyle: TextStyle(color: DeductionsConstants.subtitleColor),
+            prefixIcon: isNumber ? Icon(Icons.attach_money, color: DeductionsConstants.primaryColor) : null,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: DeductionsConstants.subtitleColor.withAlpha(77)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: DeductionsConstants.subtitleColor.withAlpha(77)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: DeductionsConstants.primaryColor, width: 2),
+            ),
+            filled: true,
+            fillColor: DeductionsConstants.backgroundColor,
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Please enter $label';
+            }
+            if (isNumber) {
+              final num = double.tryParse(value);
+              if (num == null || num <= 0) {
+                return 'Please enter a valid positive amount';
+              }
+              if (num > 1000000) {
+                return 'Amount cannot exceed KES 1,000,000';
+              }
+            } else if (value.length > 100) {
+              return 'Description cannot exceed 100 characters';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSheetDatePicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Deduction Date *',
+          style: TextStyle(
+            color: DeductionsConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: DeductionsConstants.subtitleColor.withAlpha(77)),
+          ),
+          child: ListTile(
+            onTap: () => _selectDate(context),
+            leading: Icon(Icons.calendar_today, color: DeductionsConstants.primaryColor),
+            title: Text(
+              _selectedDate == null
+                  ? 'Select Deduction Date'
+                  : DateFormat('MMMM dd, yyyy').format(_selectedDate!),
+              style: TextStyle(
+                color: _selectedDate == null 
+                    ? DeductionsConstants.subtitleColor 
+                    : DeductionsConstants.textColor,
+              ),
+            ),
+            trailing: Icon(Icons.arrow_drop_down, color: DeductionsConstants.primaryColor),
+          ),
+        ),
+        if (_selectedDate == null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              'Please select a date',
+              style: TextStyle(color: Colors.red[700], fontSize: 12),
+            ),
+          ),
+      ],
+    );
+  }
 }

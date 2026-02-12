@@ -7,6 +7,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_html/html.dart' as html
     if (kIsWeb) "universal_html.dart";
@@ -21,19 +24,21 @@ class PaySalariesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const PaySalariesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _PaySalariesScreenState createState() => _PaySalariesScreenState();
+  PaySalariesScreenState createState() => PaySalariesScreenState();
 }
 
-class _PaySalariesScreenState extends State<PaySalariesScreen> {
-  List<Map<String, dynamic>> salaries = [];
+class PaySalariesScreenState extends State<PaySalariesScreen> {
+  // Data
+  List<SalaryRecord> salaries = [];
   bool isLoading = false;
 
+  // Filters
   int selectedMonth = DateTime.now().month;
   int selectedYear = DateTime.now().year;
   DateTime? selectedPaymentDate;
@@ -41,18 +46,31 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
   List<int> companyIds = [];
   Map<int, String> companyIdToName = {};
 
+  // Selection & Search
   Map<String, bool> selectedEmployees = {};
   String searchKeyword = '';
   Timer? _debounce;
 
-  Set<String> benefitDescriptions = {};
+  // Benefits & Deductions tracking
+  Set<String> cashBenefitDescriptions = {};
+  Set<String> nonCashBenefitDescriptions = {};
   Set<String> deductionDescriptions = {};
+  bool _includeBonusInHousingLevy = true;
+
+  // Color scheme
+  final Color primaryColor = const Color(0xFF2E7D32);
+  final Color secondaryColor = const Color(0xFF4CAF50);
+  final Color accentColor = const Color(0xFF8BC34A);
+  final Color backgroundColor = const Color(0xFFF5F9F5);
+  final Color cardColor = Colors.white;
+  final Color textColor = const Color(0xFF2E3A3B);
+  final Color subtitleColor = const Color(0xFF6B7280);
 
   @override
   void initState() {
     super.initState();
     selectedPaymentDate = DateTime.now();
-    _fetchCompanies();
+    _initializeData();
   }
 
   @override
@@ -61,48 +79,21 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
     super.dispose();
   }
 
-  Future<void> _logout(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
+  Future<void> _initializeData() async {
+    await _fetchCompanies();
   }
 
   Future<void> _fetchCompanies() async {
     setState(() => isLoading = true);
     try {
       final companies = await widget.apiService.getCompanies();
-      if (kDebugMode) {
-        print('API companies response: $companies');
-      }
       final isAdmin = widget.user.role == 'admin';
 
       setState(() {
         if (isAdmin) {
+          // Admin sees their assigned company
           final filteredCompanies = companies.where((c) {
-            final companyId =
-                c['id'] is String ? int.tryParse(c['id']) : c['id'] as int?;
+            final companyId = _parseCompanyId(c['id']);
             return companyId == widget.user.companyId;
           }).toList();
 
@@ -120,9 +111,9 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
           };
           selectedCompanyId = widget.user.companyId;
         } else {
+          // Non-admin sees only their company
           final filteredCompanies = companies.where((c) {
-            final companyId =
-                c['id'] is String ? int.tryParse(c['id']) : c['id'] as int?;
+            final companyId = _parseCompanyId(c['id']);
             return companyId == widget.user.companyId;
           }).toList();
 
@@ -140,55 +131,33 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
           };
           selectedCompanyId = widget.user.companyId;
         }
-        if (kDebugMode) {
-          print('companyIds: $companyIds');
-          print('selectedCompanyId: $selectedCompanyId');
-        }
       });
 
       if (selectedCompanyId != null) {
         await fetchAndCalculateSalaries();
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching companies: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching companies: $e')),
-      );
+      if (!mounted) return;
+      _showErrorSnackBar('Error fetching companies: $e');
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
+  int _parseCompanyId(dynamic id) {
+    if (id is String) return int.tryParse(id) ?? 0;
+    if (id is int) return id;
+    return 0;
+  }
+
   Future<void> fetchAndCalculateSalaries() async {
-    if (selectedCompanyId == null) {
-      setState(() {
-        salaries.clear();
-        selectedEmployees.clear();
-        isLoading = false;
-      });
-      return;
-    }
+    if (selectedCompanyId == null) return;
 
     final isAdmin = widget.user.role == 'admin';
     if (!isAdmin && selectedCompanyId != widget.user.companyId) {
-      if (kDebugMode) {
-        print(
-            'Invalid selectedCompanyId ($selectedCompanyId) for non-admin user. Resetting to user.companyId (${widget.user.companyId})');
-      }
-      setState(() {
-        selectedCompanyId = widget.user.companyId;
-        salaries.clear();
-        selectedEmployees.clear();
-        isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Access denied: You can only view your company’s salaries.'),
-        ),
-      );
+      _showErrorSnackBar('Access denied: You can only view your company\'s salaries.');
       return;
     }
 
@@ -196,1217 +165,1070 @@ class _PaySalariesScreenState extends State<PaySalariesScreen> {
       isLoading = true;
       salaries.clear();
       selectedEmployees.clear();
-      benefitDescriptions.clear();
+      cashBenefitDescriptions.clear();
+      nonCashBenefitDescriptions.clear();
       deductionDescriptions.clear();
     });
 
     try {
-      final userEmployeeId = widget.user.employeeId;
-      final effectiveCompanyId = selectedCompanyId!;
-
-      if (kDebugMode) {
-        print('Fetching employees for companyId: $effectiveCompanyId');
-      }
-
-      List<Map<String, dynamic>> employees = [];
-      if (isAdmin) {
-        employees = await widget.apiService.getEmployeeList(effectiveCompanyId);
-      } else if (userEmployeeId != null) {
-        employees =
-            (await widget.apiService.getEmployeeList(widget.user.companyId))
-                .where((e) => e['employee_id'] == userEmployeeId)
-                .toList();
-      }
-
-      employees =
-          employees.where((e) => e['employee_status'] != 'Inactive').toList();
-
+      final employees = await _fetchEmployees();
       if (employees.isEmpty) {
         throw Exception('No active employees found for your company.');
       }
 
-      double totalGrossPay = 0;
-      double totalHouseAllowance = 0;
-      double totalNetPay = 0;
-      double totalDeductions = 0;
-      double totalOvertimeAmount = 0;
-      double totalEarnings = 0;
-      double totalShifDeduction = 0;
-      double totalNssfTierIDeduction = 0;
-      double totalNssfTierIIDeduction = 0;
-      double totalHousingLevy = 0;
-      double totalPensionContributions = 0;
-      double totalPayeDeduction = 0;
-      double totalOtherDeductions = 0;
-      double totalNonCashBenefitsOverall = 0;
-      double totalInsuranceRelief = 0;
-
-      for (var employee in employees) {
-        final employeeId = employee['employee_id'].toString();
-        final originalGrossPay =
-            double.tryParse(employee['gross_pay']?.toString() ?? '0') ?? 0.0;
-        final houseAllowance =
-            double.tryParse(employee['house_allowance']?.toString() ?? '0') ??
-                0.0;
-        final companyName = employee['company_name']?.toString();
-
-        if (kDebugMode) {
-          print(
-              'Processing employee: $employeeId, status: ${employee['employee_status']}');
-        }
-
-        // Check if salary is already paid for this month and year
-        final paymentDate = selectedPaymentDate ?? DateTime.now();
-        final month = paymentDate.month;
-        final year = paymentDate.year;
-        final checkResult =
-            await _checkPaidStatus(employeeId, effectiveCompanyId, month, year);
-        final isPaid = checkResult['isPaid'] as bool;
-        final errorMessage = checkResult['message'] as String?;
-
-        final nonCashBenefits = await widget.apiService.fetchBenefits(
-          effectiveCompanyId,
-          selectedMonth,
-          selectedYear,
-          employeeId,
-        );
-        final overtimeAmount = await widget.apiService.fetchOvertimeAmount(
-            employeeId, effectiveCompanyId, selectedMonth, selectedYear);
-        final earnings = await widget.apiService.fetchEarnings(
-            employeeId, effectiveCompanyId, selectedMonth, selectedYear);
-        final deductions = await widget.apiService.fetchDeductions(
-          effectiveCompanyId,
-          selectedMonth,
-          selectedYear,
-          employeeId,
-        );
-        final pensionContributions = await widget.apiService
-            .fetchPensionContributions(
-                employeeId, effectiveCompanyId, selectedMonth, selectedYear);
-        final loanRepayment = await widget.apiService.fetchLoanRepayment(
-            employeeId, effectiveCompanyId, selectedMonth, selectedYear);
-        final insuranceReliefs = await widget.apiService.getInsuranceRelief(
-            employeeId: employeeId,
-            companyId: effectiveCompanyId,
-            month: selectedMonth,
-            year: selectedYear);
-
-        double totalNonCashBenefits = 0.0;
-        double nonCashForTaxing = 0.0;
-        Map<String, double> benefitAmounts = {};
-        Map<String, double> deductionAmounts = {};
-
-        if (nonCashBenefits.isNotEmpty) {
-          for (var benefit in nonCashBenefits) {
-            final description =
-                benefit['description']?.toString() ?? 'Unknown Benefit';
-            final amount =
-                double.tryParse(benefit['amount']?.toString() ?? '0') ?? 0.0;
-            benefitDescriptions.add(description);
-            benefitAmounts[description] = amount;
-            totalNonCashBenefits += amount;
-          }
-          if (totalNonCashBenefits > 3000) {
-            nonCashForTaxing = totalNonCashBenefits;
-          }
-        }
-
-        double totalOtherDeductionsForEmployee = 0.0;
-        if (loanRepayment != null && loanRepayment > 0) {
-          const loanDeductionDesc = 'Loan Deduction';
-          deductionDescriptions.add(loanDeductionDesc);
-          deductionAmounts[loanDeductionDesc] = loanRepayment;
-          totalOtherDeductionsForEmployee += loanRepayment;
-          if (kDebugMode) {
-            print(
-                'Added Loan Deduction: $loanRepayment for employee $employeeId');
-          }
-        }
-
-        if (deductions.isNotEmpty) {
-          for (var deduction in deductions) {
-            final description =
-                deduction['description']?.toString() ?? 'Unknown Deduction';
-            if (description.toLowerCase().contains('loan')) {
-              if (kDebugMode) {
-                print('Skipping loan-related deduction: $description');
-              }
-              continue;
-            }
-            final amount =
-                double.tryParse(deduction['amount']?.toString() ?? '0') ?? 0.0;
-            deductionDescriptions.add(description);
-            deductionAmounts[description] = amount;
-            totalOtherDeductionsForEmployee += amount;
-          }
-        }
-
-        final grossPay = originalGrossPay + (overtimeAmount ?? 0.0);
-        final nssfTierIDeduction = grossPay > 8000 ? 480 : grossPay * 0.06;
-        final nssfTierIIDeduction = (grossPay > 8000)
-            ? ((grossPay <= 72000)
-                ? (grossPay - 8000) * 0.06
-                : (72000 - 8000) * 0.06)
-            : 0.0;
-        final shifDeduction = grossPay * 0.0275;
-        final housingLevy = originalGrossPay * 0.015;
-
-        double insuranceRelief = 0.0;
-        if (insuranceReliefs.isNotEmpty) {
-          insuranceRelief = insuranceReliefs
-              .where((relief) => relief['employee_id'] == employeeId)
-              .fold<double>(
-                  0.0,
-                  (sum, relief) =>
-                      sum +
-                      (double.tryParse(
-                              relief['relief_amount']?.toString() ?? '0') ??
-                          0.0));
-        }
-
-        final taxableIncome = grossPay +
-            nonCashForTaxing -
-            nssfTierIDeduction -
-            nssfTierIIDeduction -
-            shifDeduction -
-            (pensionContributions ?? 0.0) -
-            housingLevy;
-
-        final payeDeductionBeforeRelief = await widget.apiService.calculatePAYE(
-          taxableIncome,
-          personalRelief: 2400,
-          nhifRelief: 0,
-          nssfContribution: nssfTierIDeduction + nssfTierIIDeduction,
-          housingLevy: housingLevy,
-        );
-
-        final payeDeduction =
-            insuranceRelief > 0 && payeDeductionBeforeRelief > 0
-                ? (payeDeductionBeforeRelief - insuranceRelief > 0
-                    ? payeDeductionBeforeRelief - insuranceRelief
-                    : 0.0)
-                : payeDeductionBeforeRelief;
-
-        final totalEarningsForEmployee = earnings.fold(
-            0.0,
-            (sum, earning) =>
-                sum +
-                (double.tryParse(earning['amount']?.toString() ?? '0') ?? 0.0));
-
-        final totalCoreDeductions = payeDeduction +
-            shifDeduction +
-            nssfTierIDeduction +
-            nssfTierIIDeduction +
-            housingLevy;
-
-        final netPay = grossPay +
-            totalEarningsForEmployee -
-            totalCoreDeductions -
-            totalOtherDeductionsForEmployee +
-            (insuranceRelief > 0 ? insuranceRelief : 0.0) -
-            (pensionContributions ?? 0.0);
-
-        totalGrossPay += grossPay;
-        totalHouseAllowance += houseAllowance;
-        totalNetPay += netPay;
-        totalDeductions += totalCoreDeductions +
-            totalOtherDeductionsForEmployee +
-            (pensionContributions ?? 0.0);
-        totalOvertimeAmount += (overtimeAmount ?? 0.0);
-        totalEarnings += totalEarningsForEmployee;
-        totalShifDeduction += shifDeduction;
-        totalNssfTierIDeduction += nssfTierIDeduction;
-        totalNssfTierIIDeduction += nssfTierIIDeduction;
-        totalHousingLevy += housingLevy;
-        totalPensionContributions += (pensionContributions ?? 0.0);
-        totalPayeDeduction += payeDeduction;
-        totalOtherDeductions += totalOtherDeductionsForEmployee;
-        totalNonCashBenefitsOverall += totalNonCashBenefits;
-        totalInsuranceRelief += insuranceRelief;
-
-        final salaryRecord = {
-          'employee_id': employeeId,
-          'fullname': employee['fullname'] ?? 'Unknown',
-          'company_id': employee['company_id'] ?? effectiveCompanyId,
-          'company_name': companyName,
-          'gross_pay': grossPay,
-          'house_allowance': houseAllowance,
-          'basic_pay':
-              double.tryParse(employee['basic']?.toString() ?? '0') ?? 0.0,
-          'non_cash_benefits':
-              totalNonCashBenefits > 0 ? totalNonCashBenefits : null,
-          'overtime_amount': overtimeAmount != null && overtimeAmount > 0
-              ? overtimeAmount
-              : null,
-          'earnings':
-              totalEarningsForEmployee > 0 ? totalEarningsForEmployee : null,
-          'taxable_income': taxableIncome > 0 ? taxableIncome : null,
-          'shif_deduction': shifDeduction > 0 ? shifDeduction : null,
-          'nssf_tier_i_deduction':
-              nssfTierIDeduction > 0 ? nssfTierIDeduction : null,
-          'nssf_tier_ii_deduction':
-              nssfTierIIDeduction > 0 ? nssfTierIIDeduction : null,
-          'housing_levy': housingLevy > 0 ? housingLevy : null,
-          'pension_contributions':
-              pensionContributions != null && pensionContributions > 0
-                  ? pensionContributions
-                  : null,
-          'paye_deduction': payeDeduction > 0 ? payeDeduction : null,
-          'deductions': totalOtherDeductionsForEmployee > 0
-              ? totalOtherDeductionsForEmployee
-              : null,
-          'insurance_relief': insuranceRelief > 0 ? insuranceRelief : null,
-          'total_deductions': (totalCoreDeductions +
-                      totalOtherDeductionsForEmployee +
-                      (pensionContributions ?? 0.0)) >
-                  0
-              ? (totalCoreDeductions +
-                  totalOtherDeductionsForEmployee +
-                  (pensionContributions ?? 0.0))
-              : null,
-          'net_pay': netPay > 0 ? netPay : null,
-          'payment_date': selectedPaymentDate != null
-              ? DateFormat('yyyy-MM-dd').format(selectedPaymentDate!)
-              : DateFormat('yyyy-MM-dd').format(DateTime.now()),
-          'status': isPaid ? 'Already Paid' : 'Pending',
-          ...benefitAmounts
-              .map((key, value) => MapEntry('benefit_$key', value)),
-          ...deductionAmounts
-              .map((key, value) => MapEntry('deduction_$key', value)),
-        };
-
-        setState(() {
-          salaries.add(salaryRecord);
-          selectedEmployees[employeeId] = false;
-        });
-      }
-
-      if (isAdmin && salaries.isNotEmpty) {
-        setState(() {
-          salaries.add({
-            'employee_id': null,
-            'fullname': 'Totals',
-            'company_id': null,
-            'company_name': null,
-            'gross_pay': totalGrossPay > 0 ? totalGrossPay : null,
-            'house_allowance':
-                totalHouseAllowance > 0 ? totalHouseAllowance : 0,
-            'basic_pay': null,
-            'non_cash_benefits': totalNonCashBenefitsOverall > 0
-                ? totalNonCashBenefitsOverall
-                : null,
-            'overtime_amount':
-                totalOvertimeAmount > 0 ? totalOvertimeAmount : null,
-            'earnings': totalEarnings > 0 ? totalEarnings : null,
-            'taxable_income': null,
-            'shif_deduction':
-                totalShifDeduction > 0 ? totalShifDeduction : null,
-            'nssf_tier_i_deduction':
-                totalNssfTierIDeduction > 0 ? totalNssfTierIDeduction : null,
-            'nssf_tier_ii_deduction':
-                totalNssfTierIIDeduction > 0 ? totalNssfTierIIDeduction : null,
-            'housing_levy': totalHousingLevy > 0 ? totalHousingLevy : null,
-            'pension_contributions': totalPensionContributions > 0
-                ? totalPensionContributions
-                : null,
-            'paye_deduction':
-                totalPayeDeduction > 0 ? totalPayeDeduction : null,
-            'deductions':
-                totalOtherDeductions > 0 ? totalOtherDeductions : null,
-            'insurance_relief':
-                totalInsuranceRelief > 0 ? totalInsuranceRelief : null,
-            'total_deductions': totalDeductions > 0 ? totalDeductions : null,
-            'net_pay': totalNetPay > 0 ? totalNetPay : null,
-            'payment_date': selectedPaymentDate != null
-                ? DateFormat('yyyy-MM-dd').format(selectedPaymentDate!)
-                : DateFormat('yyyy-MM-dd').format(DateTime.now()),
-            'status': 'Totals',
-            ...benefitDescriptions.fold<Map<String, dynamic>>(
-                {},
-                (map, desc) => map
-                  ..['benefit_$desc'] = salaries.fold<double>(0.0,
-                      (sum, record) => sum + (record['benefit_$desc'] ?? 0.0))),
-            ...deductionDescriptions.fold<Map<String, dynamic>>(
-                {},
-                (map, desc) => map
-                  ..['deduction_$desc'] = salaries.fold<double>(
-                      0.0,
-                      (sum, record) =>
-                          sum + (record['deduction_$desc'] ?? 0.0))),
-          });
-        });
-      }
-
-      if (kDebugMode) {
-        print(
-            'Processing complete. Total active employees processed: ${employees.length}');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching and calculating salaries: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+      // Fetch all deductions for the company once
+      final allDeductions = await widget.apiService.fetchDeductionsList(
+        selectedCompanyId!,
+        month: selectedMonth,
+        year: selectedYear,
       );
+
+      final calculationResults = await _calculateAllSalaries(employees, allDeductions);
+      _updateSalariesList(calculationResults);
+
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Error calculating salaries: $e');
     } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-Future<Map<String, dynamic>> _checkPaidStatus(
-      String employeeId, int companyId, int month, int year) async {
-    try {
-      final response = await widget.apiService
-          .checkPaidStatus(companyId, employeeId, month, year);
-      return {'isPaid': response == true, 'message': null};
-    } catch (e) {
-      if (e is Exception) {
-        // Attempt to parse the error as JSON if it's a string
-        if (e.toString().contains('{') && e.toString().contains('}')) {
-          try {
-            final errorData = jsonDecode(e.toString());
-            if (errorData['status'] == 'error' &&
-                errorData['errors'] is List &&
-                (errorData['errors'] as List).any((error) => error
-                    .toString()
-                    .contains(
-                        'Salary already paid for employee ID $employeeId'))) {
-              return {
-                'isPaid': true,
-                'message':
-                    'Salary already processed for employee ID $employeeId in ${month.toString().padLeft(2, '0')}/$year'
-              };
-            }
-          } catch (jsonError) {
-            if (kDebugMode) {
-              print('Failed to parse JSON error: $jsonError');
-            }
-          }
-        }
-        if (kDebugMode) {
-          print('Error checking paid status for $employeeId: $e');
-        }
-        return {'isPaid': false, 'message': e.toString()};
+      if (mounted) {
+        setState(() => isLoading = false);
       }
-      return {'isPaid': false, 'message': e.toString()};
     }
   }
 
-  void showSalarySlip(Map<String, dynamic> salary) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Text('Salary Slip for ${salary['fullname']}',
-            style: TextStyle(color: Colors.teal[900])),
-        content: SingleChildScrollView(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.white, Colors.teal[50]!],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (salary['employee_id'] != null)
-                  _buildSlipText(
-                      'Employee ID', salary['employee_id'].toString()),
-                if (salary['company_name'] != null)
-                  _buildSlipText('Company', salary['company_name']),
-                if (salary['payment_date'] != null)
-                  _buildSlipText('Payment Date', salary['payment_date']),
-                if (salary['status'] != null)
-                  _buildSlipText('Status', salary['status']),
-                if (salary['gross_pay'] != null)
-                  _buildSlipText('Gross Pay (incl. Overtime)',
-                      salary['gross_pay'].toStringAsFixed(2)),
-                if (salary['house_allowance'] != null)
-                  _buildSlipText('House Allowance',
-                      salary['house_allowance'].toStringAsFixed(2)),
-                if (salary['basic_pay'] != null)
-                  _buildSlipText(
-                      'Basic Pay', salary['basic_pay'].toStringAsFixed(2)),
-                ...benefitDescriptions.map((desc) {
-                  final key = 'benefit_$desc';
-                  return salary[key] != null
-                      ? _buildSlipText(desc, salary[key].toStringAsFixed(2))
-                      : Container();
-                }),
-                if (salary['non_cash_benefits'] != null)
-                  _buildSlipText('Total Non-Cash Benefits',
-                      salary['non_cash_benefits'].toStringAsFixed(2)),
-                if (salary['overtime_amount'] != null)
-                  _buildSlipText('Overtime Amount',
-                      salary['overtime_amount'].toStringAsFixed(2)),
-                if (salary['earnings'] != null)
-                  _buildSlipText(
-                      'Total Earnings', salary['earnings'].toStringAsFixed(2)),
-                if (salary['taxable_income'] != null)
-                  _buildSlipText('Taxable Income',
-                      salary['taxable_income'].toStringAsFixed(2)),
-                if (salary['shif_deduction'] != null)
-                  _buildSlipText('SHIF Deduction',
-                      salary['shif_deduction'].toStringAsFixed(2)),
-                if (salary['nssf_tier_i_deduction'] != null)
-                  _buildSlipText('NSSF Tier I Deduction',
-                      salary['nssf_tier_i_deduction'].toStringAsFixed(2)),
-                if (salary['nssf_tier_ii_deduction'] != null)
-                  _buildSlipText('NSSF Tier II Deduction',
-                      salary['nssf_tier_ii_deduction'].toStringAsFixed(2)),
-                if (salary['housing_levy'] != null)
-                  _buildSlipText('Housing Levy',
-                      salary['housing_levy'].toStringAsFixed(2)),
-                if (salary['paye_deduction'] != null)
-                  _buildSlipText('PAYE Deduction',
-                      salary['paye_deduction'].toStringAsFixed(2)),
-                if (salary['pension_contributions'] != null)
-                  _buildSlipText('Pension Contributions',
-                      salary['pension_contributions'].toStringAsFixed(2)),
-                if (salary['insurance_relief'] != null)
-                  _buildSlipText('Insurance Relief',
-                      salary['insurance_relief'].toStringAsFixed(2)),
-                ...deductionDescriptions.map((desc) {
-                  final key = 'deduction_$desc';
-                  return salary[key] != null
-                      ? _buildSlipText(desc, salary[key].toStringAsFixed(2))
-                      : Container();
-                }),
-                if (salary['deductions'] != null)
-                  _buildSlipText('Total Other Deductions',
-                      salary['deductions'].toStringAsFixed(2)),
-                if (salary['total_deductions'] != null)
-                  _buildSlipText('Total Deductions',
-                      salary['total_deductions'].toStringAsFixed(2)),
-                if (salary['net_pay'] != null)
-                  _buildSlipText(
-                      'Net Pay', salary['net_pay'].toStringAsFixed(2)),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close', style: TextStyle(color: Colors.teal[700])),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<List<Map<String, dynamic>>> _fetchEmployees() async {
+    final isAdmin = widget.user.role == 'admin';
+    final userEmployeeId = widget.user.employeeId;
+    final effectiveCompanyId = selectedCompanyId!;
 
-  Widget _buildSlipText(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('$label:', style: TextStyle(color: Colors.teal[900])),
-          Text(value, style: TextStyle(color: Colors.grey[800])),
-        ],
-      ),
-    );
-  }
-
-  Future<void> exportMasterPayroll() async {
-    if (salaries.isEmpty ||
-        (widget.user.role == 'admin' &&
-            salaries.last['fullname'] != 'Totals')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fetch salaries first.')),
-      );
-      return;
-    }
-
-    setState(() => isLoading = true);
-
-    try {
-      final headers = _buildTableColumns()
-          .map((col) => (col.label as Text).data!)
-          .toList()
-          .where((header) => header != 'Select')
+    List<Map<String, dynamic>> employees = [];
+    
+    if (isAdmin) {
+      employees = await widget.apiService.getEmployeeList(effectiveCompanyId);
+    } else if (userEmployeeId != null) {
+      employees = (await widget.apiService.getEmployeeList(widget.user.companyId))
+          .where((e) => e['employee_id'] == userEmployeeId)
           .toList();
+    }
 
-      final List<List<String>> csvData = [headers];
+    // Filter out inactive employees
+    return employees.where((e) => e['employee_status'] != 'Inactive').toList();
+  }
 
-      for (var salary in salaries) {
-        final row = [
-          salary['employee_id']?.toString() ?? '',
-          salary['company_name']?.toString() ?? '',
-          salary['fullname']?.toString() ?? '',
-          salary['gross_pay']?.toStringAsFixed(2) ?? '0.00',
-          salary['house_allowance']?.toStringAsFixed(2) ?? '0.00',
-          salary['basic_pay']?.toStringAsFixed(2) ?? '0.00',
-          ...benefitDescriptions
-              .map((desc) => salary['benefit_$desc']?.toStringAsFixed(2) ?? ''),
-          salary['non_cash_benefits']?.toStringAsFixed(2) ?? '',
-          salary['overtime_amount']?.toStringAsFixed(2) ?? '',
-          salary['earnings']?.toStringAsFixed(2) ?? '',
-          salary['taxable_income']?.toStringAsFixed(2) ?? '',
-          ...deductionDescriptions.map(
-              (desc) => salary['deduction_$desc']?.toStringAsFixed(2) ?? ''),
-          salary['deductions']?.toStringAsFixed(2) ?? '',
-          salary['shif_deduction']?.toStringAsFixed(2) ?? '',
-          salary['nssf_tier_i_deduction']?.toStringAsFixed(2) ?? '',
-          salary['nssf_tier_ii_deduction']?.toStringAsFixed(2) ?? '',
-          salary['housing_levy']?.toStringAsFixed(2) ?? '',
-          salary['paye_deduction']?.toStringAsFixed(2) ?? '',
-          salary['pension_contributions']?.toStringAsFixed(2) ?? '',
-          salary['insurance_relief']?.toStringAsFixed(2) ?? '',
-          salary['total_deductions']?.toStringAsFixed(2) ?? '',
-          salary['net_pay']?.toStringAsFixed(2) ?? '',
-          salary['payment_date']?.toString() ?? '',
-          salary['status']?.toString() ?? '',
-        ];
-        csvData.add(row.map((e) => (e as String).replaceAll(',', '')).toList());
+  Future<List<SalaryCalculation>> _calculateAllSalaries(
+      List<Map<String, dynamic>> employees,
+      List<Map<String, dynamic>> allDeductions) async {
+    final effectiveCompanyId = selectedCompanyId!;
+    final List<SalaryCalculation> calculations = [];
+
+    for (var employee in employees) {
+      final calculation = await _calculateEmployeeSalary(employee, effectiveCompanyId, allDeductions);
+      calculations.add(calculation);
+    }
+
+    return calculations;
+  }
+
+  Future<SalaryCalculation> _calculateEmployeeSalary(
+      Map<String, dynamic> employee,
+      int companyId,
+      List<Map<String, dynamic>> allDeductions) async {
+    final employeeId = employee['employee_id'].toString();
+    final originalGrossPay = _parseDouble(employee['gross_pay']);
+    final houseAllowance = _parseDouble(employee['house_allowance']);
+    final basicPay = _parseDouble(employee['basic']);
+
+    // Check if already paid
+    final paymentDate = selectedPaymentDate!;
+    final month = paymentDate.month;
+    final year = paymentDate.year;
+    final isPaid = await _checkPaidStatus(employeeId, companyId, month, year);
+
+    // Fetch all necessary data
+    final allBenefits = await widget.apiService.fetchBenefits(
+      companyId, selectedMonth, selectedYear, employeeId);
+
+    final overtimeAmount = await widget.apiService.fetchOvertimeAmount(
+      employeeId, companyId, selectedMonth, selectedYear);
+
+    final earnings = await widget.apiService.fetchEarnings(
+      employeeId, companyId, selectedMonth, selectedYear);
+
+    // Filter deductions for this employee and selected month/year from the bulk list
+    final deductions = allDeductions.where((d) {
+      if (d['date'] == null) return false;
+      try {
+        final date = DateTime.parse(d['date'].toString());
+        return d['employee_id'].toString().trim().toLowerCase() == 
+               employeeId.trim().toLowerCase() &&
+               date.month == selectedMonth &&
+               date.year == selectedYear;
+      } catch (e) {
+        return false;
       }
+    }).toList();
 
-      final csvString = const ListToCsvConverter().convert(csvData);
-      final fileName =
-          'MasterPayroll_${selectedPaymentDate != null ? DateFormat('yyyy-MM-dd').format(selectedPaymentDate!) : DateTime.now().toString()}_${companyIdToName[selectedCompanyId] ?? 'Unknown'}.csv';
-      final csvBytes = utf8.encode(csvString);
+    final pensionContributions = await widget.apiService.fetchPensionContributions(
+      employeeId, companyId, selectedMonth, selectedYear);
 
-      if (kIsWeb) {
-        final blob = html.Blob([csvBytes]);
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
-          ..setAttribute('download', fileName)
-          ..click();
-        html.Url.revokeObjectUrl(url);
-      } else {
-        final directory = await getDownloadsDirectory();
-        if (directory == null) {
-          throw Exception('Could not access Downloads directory');
-        }
-        final filePath = '${directory.path}/$fileName';
-        final file = File(filePath);
-        await file.writeAsBytes(csvBytes);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('CSV file saved to: $filePath')),
-        );
+    final loanRepayment = await widget.apiService.fetchLoanRepayment(
+      employeeId, companyId, selectedMonth, selectedYear);
+
+    final insuranceReliefs = await widget.apiService.getInsuranceRelief(
+      employeeId: employeeId,
+      companyId: companyId,
+      month: selectedMonth,
+      year: selectedYear);
+
+    // Process benefits (SEPARATE CASH AND NON-CASH BASED ON benefit_type FROM API)
+    final benefitResult = _processBenefits(allBenefits);
+    
+    // Process Deductions into a Map for the UI columns
+    Map<String, double> deductionAmounts = {};
+    for (var deduction in deductions) {
+      final description = deduction['description']?.toString() ?? 'Unknown Deduction';
+      final amount = _parseDouble(deduction['amount']);
+      
+      if (!description.toLowerCase().contains('loan')) {
+        deductionAmounts[description] = (deductionAmounts[description] ?? 0.0) + amount;
       }
+    }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Master Payroll exported successfully'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
-    } catch (e) {
+    // Calculate gross pay (INCLUDING CASH BENEFITS)
+    final grossPay = originalGrossPay + overtimeAmount + benefitResult.totalCashBenefits;
+
+    // Calculate statutory deductions
+    final nssfTierIDeduction = _calculateNSSFTierI(grossPay);
+    final nssfTierIIDeduction = _calculateNSSFTierII(grossPay);
+    final shifDeduction = grossPay * 0.0275;
+
+    double housingLevyBase = grossPay;
+    if (!_includeBonusInHousingLevy) {
+      housingLevyBase -= benefitResult.bonusAmount;
+    }
+    housingLevyBase -= overtimeAmount;
+    final housingLevy = housingLevyBase * 0.015;
+
+    // Calculate other components
+    final totalEarnings = _sumEarnings(earnings);
+    final insuranceRelief = _sumInsuranceRelief(insuranceReliefs, employeeId);
+    final totalOtherDeductions = _calculateOtherDeductions(deductions, loanRepayment);
+
+    // Calculate taxable income (INCLUDING taxable non-cash benefits)
+    final taxableIncome = _calculateTaxableIncome(
+      grossPay,
+      benefitResult.taxableNonCashBenefits,
+      totalEarnings,
+      nssfTierIDeduction,
+      nssfTierIIDeduction,
+      shifDeduction,
+      pensionContributions,
+      housingLevy,
+    );
+
+    // Calculate PAYE
+    final payeDeduction = await _calculatePAYEWithRelief(
+      taxableIncome,
+      nssfTierIDeduction + nssfTierIIDeduction,
+      housingLevy,
+      insuranceRelief,
+    );
+
+    // Calculate net pay
+    final netPay = _calculateNetPay(
+      grossPay,
+      totalEarnings,
+      payeDeduction,
+      shifDeduction,
+      nssfTierIDeduction,
+      nssfTierIIDeduction,
+      housingLevy,
+      pensionContributions,
+      totalOtherDeductions,
+      insuranceRelief,
+    );
+
+    // Track descriptions for UI
+    _trackBenefitAndDeductionDescriptions(benefitResult, deductions);
+
+    return SalaryCalculation(
+      employeeId: employeeId,
+      fullname: employee['fullname']?.toString() ?? 'Unknown',
+      companyId: companyId,
+      companyName: employee['company_name']?.toString(),
+      originalGrossPay: originalGrossPay,
+      houseAllowance: houseAllowance,
+      basicPay: basicPay,
+      isPaid: isPaid,
+      benefitResult: benefitResult,
+      overtimeAmount: overtimeAmount,
+      earnings: earnings,
+      totalEarnings: totalEarnings,
+      deductions: deductions,
+      pensionContributions: pensionContributions,
+      loanRepayment: loanRepayment,
+      insuranceRelief: insuranceRelief,
+      grossPay: grossPay,
+      nssfTierIDeduction: nssfTierIDeduction,
+      nssfTierIIDeduction: nssfTierIIDeduction,
+      shifDeduction: shifDeduction,
+      housingLevy: housingLevy,
+      totalOtherDeductions: totalOtherDeductions,
+      taxableIncome: taxableIncome,
+      payeDeduction: payeDeduction,
+      netPay: netPay,
+      cashBenefitAmounts: benefitResult.cashBenefitAmounts,
+      nonCashBenefitAmounts: benefitResult.nonCashBenefitAmounts,
+      deductionAmounts: deductionAmounts,
+      bonusAmount: benefitResult.bonusAmount,
+    );
+  }
+
+  BenefitResult _processBenefits(List<Map<String, dynamic>> benefits) {
+    double totalCashBenefits = 0.0;
+    double totalNonCashBenefits = 0.0;
+    double taxableNonCashBenefits = 0.0;
+    double carBenefitTotal = 0.0;
+    double otherNonCashTotal = 0.0;
+    Map<String, double> cashBenefitAmounts = {};
+    Map<String, double> nonCashBenefitAmounts = {};
+    Map<String, double> deductionAmounts = {};
+    double bonusAmount = 0.0;
+
+    for (var benefit in benefits) {
+      final description = benefit['description']?.toString() ?? 'Unknown Benefit';
+      final amount = _parseDouble(benefit['amount']);
+      
+      // CRITICAL: Read benefit_type from API response - this comes from {"benefit_type":"Cash"}
+      final benefitType = (benefit['benefit_type']?.toString() ?? 'Non-Cash').toLowerCase().trim();
+      
       if (kDebugMode) {
-        print('Error exporting master payroll: $e');
+        print('Processing benefit: $description, Type: $benefitType, Amount: $amount');
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error exporting master payroll: $e')),
-      );
-    } finally {
-      setState(() => isLoading = false);
+
+      if (benefitType.contains('cash') && !benefitType.contains('non')) {
+        // CASH BENEFITS: Always taxable, add to gross pay
+        cashBenefitAmounts[description] = amount;
+        if (description.toLowerCase().trim() == 'bonus') {
+          bonusAmount += amount;
+        }
+        totalCashBenefits += amount;
+        if (kDebugMode) {
+          print('✓ CASH benefit: $description - KES $amount (ALWAYS taxable, added to gross pay)');
+        }
+      } else {
+        // NON-CASH BENEFITS: Only taxable if > 5,000
+        nonCashBenefitAmounts[description] = amount;
+        totalNonCashBenefits += amount;
+        
+        // Check if it is a Car Benefit
+        if (description.toLowerCase().contains('car')) {
+          carBenefitTotal += amount;
+        } else {
+          otherNonCashTotal += amount;
+        }
+      }
+    }
+
+    // Calculate Taxable Non-Cash Benefits
+    // Car benefit is always taxable. Other non-cash benefits are taxable only if their sum exceeds 5,000.
+    taxableNonCashBenefits = carBenefitTotal;
+    
+    if (otherNonCashTotal > 5000) {
+      taxableNonCashBenefits += otherNonCashTotal;
+    }
+
+    if (kDebugMode) {
+      print('Benefit Summary:');
+      print('  Total Cash Benefits: KES $totalCashBenefits');
+      print('  Total Non-Cash Benefits: KES $totalNonCashBenefits');
+      print('  Car Benefit: KES $carBenefitTotal');
+      print('  Other Non-Cash Total: KES $otherNonCashTotal');
+      print('  Taxable Non-Cash Benefits: KES $taxableNonCashBenefits');
+    }
+
+    return BenefitResult(
+      totalCashBenefits: totalCashBenefits,
+      totalNonCashBenefits: totalNonCashBenefits,
+      taxableNonCashBenefits: taxableNonCashBenefits,
+      cashBenefitAmounts: cashBenefitAmounts,
+      nonCashBenefitAmounts: nonCashBenefitAmounts,
+      deductionAmounts: deductionAmounts,
+      bonusAmount: bonusAmount,
+    );
+  }
+
+  void _trackBenefitAndDeductionDescriptions(
+      BenefitResult benefitResult, List<Map<String, dynamic>> deductions) {
+    cashBenefitDescriptions.addAll(benefitResult.cashBenefitAmounts.keys);
+    nonCashBenefitDescriptions.addAll(benefitResult.nonCashBenefitAmounts.keys);
+    
+    for (var deduction in deductions) {
+      final description = deduction['description']?.toString() ?? 'Unknown Deduction';
+      if (!description.toLowerCase().contains('loan')) {
+        deductionDescriptions.add(description);
+      }
     }
   }
 
+  double _calculateNSSFTierI(double grossPay) {
+    return grossPay > 8000 ? 480 : grossPay * 0.06;
+  }
+
+  double _calculateNSSFTierII(double grossPay) {
+    if (grossPay <= 8000) return 0.0;
+    if (grossPay <= 72000) return (grossPay - 8000) * 0.06;
+    return (72000 - 8000) * 0.06;
+  }
+
+  double _sumEarnings(List<Map<String, dynamic>> earnings) {
+    return earnings.fold(0.0, (sum, earning) => sum + _parseDouble(earning['amount']));
+  }
+
+  double _sumInsuranceRelief(List<Map<String, dynamic>> reliefs, String employeeId) {
+    return reliefs
+        .where((relief) => relief['employee_id'] == employeeId)
+        .fold(0.0, (sum, relief) => sum + _parseDouble(relief['relief_amount']));
+  }
+
+  double _calculateOtherDeductions(List<Map<String, dynamic>> deductions, double? loanRepayment) {
+    double total = 0.0;
+    
+    if (loanRepayment != null && loanRepayment > 0) {
+      total += loanRepayment;
+    }
+    
+    for (var deduction in deductions) {
+      final description = deduction['description']?.toString().toLowerCase() ?? '';
+      if (!description.contains('loan')) {
+        total += _parseDouble(deduction['amount']);
+      }
+    }
+    
+    return total;
+  }
+
+  double _calculateTaxableIncome(
+    double grossPay,
+    double taxableNonCashBenefits,
+    double totalEarnings,
+    double nssfTierI,
+    double nssfTierII,
+    double shifDeduction,
+    double pensionContributions,
+    double housingLevy,
+  ) {
+    // IMPORTANT: Cash benefits are already included in grossPay
+    // Only taxable non-cash benefits (>5000) are added separately
+    return grossPay 
+        + taxableNonCashBenefits  // Only NON-CASH benefits > 5,000 KES
+        + totalEarnings
+        - nssfTierI
+        - nssfTierII
+        - shifDeduction
+        - pensionContributions
+        - housingLevy;
+  }
+
+  Future<double> _calculatePAYEWithRelief(
+    double taxableIncome,
+    double nssfContribution,
+    double housingLevy,
+    double insuranceRelief,
+  ) async {
+    final payeBeforeRelief = await widget.apiService.calculatePAYE(
+      taxableIncome,
+      personalRelief: 2400,
+      nhifRelief: 0,
+      nssfContribution: nssfContribution,
+      housingLevy: housingLevy,
+    );
+
+    if (insuranceRelief > 0 && payeBeforeRelief > 0) {
+      return payeBeforeRelief - insuranceRelief > 0 
+          ? payeBeforeRelief - insuranceRelief 
+          : 0.0;
+    }
+    
+    return payeBeforeRelief;
+  }
+
+  double _calculateNetPay(
+    double grossPay,
+    double totalEarnings,
+    double payeDeduction,
+    double shifDeduction,
+    double nssfTierI,
+    double nssfTierII,
+    double housingLevy,
+    double pensionContributions,
+    double totalOtherDeductions,
+    double insuranceRelief,
+  ) {
+    final totalCoreDeductions = payeDeduction +
+        shifDeduction +
+        nssfTierI +
+        nssfTierII +
+        housingLevy;
+
+    return grossPay +
+        totalEarnings -
+        totalCoreDeductions -
+        totalOtherDeductions +
+        (insuranceRelief > 0 ? insuranceRelief : 0.0) -
+        pensionContributions;
+  }
+
+  double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
+
+  Future<bool> _checkPaidStatus(String employeeId, int companyId, int month, int year) async {
+    try {
+      final response = await widget.apiService.checkPaidStatus(companyId, employeeId, month, year);
+      return response == true;
+    } catch (e) {
+      // Check if error message indicates already paid
+      if (e.toString().contains('Salary already paid for employee ID')) {
+        return true;
+      }
+      return false;
+    }
+  }
+
+  void _updateSalariesList(List<SalaryCalculation> calculations) {
+    final isAdmin = widget.user.role == 'admin';
+    final now = DateTime.now();
+    
+    for (var calc in calculations) {
+      final salaryRecord = SalaryRecord.fromCalculation(
+        calc,
+        selectedPaymentDate ?? now,
+        isAdmin,
+      );
+      
+      salaries.add(salaryRecord);
+      selectedEmployees[calc.employeeId] = false;
+    }
+
+    // Add totals row for admin
+    if (isAdmin && salaries.isNotEmpty) {
+      final totals = _calculateTotals();
+      salaries.add(totals);
+    }
+  }
+
+  SalaryRecord _calculateTotals() {
+    double totalGrossPay = 0;
+    double totalHouseAllowance = 0;
+    double totalNetPay = 0;
+    double totalDeductions = 0;
+    double totalOvertimeAmount = 0;
+    double totalEarnings = 0;
+    double totalShifDeduction = 0;
+    double totalNssfTierIDeduction = 0;
+    double totalNssfTierIIDeduction = 0;
+    double totalHousingLevy = 0;
+    double totalPensionContributions = 0;
+    double totalPayeDeduction = 0;
+    double totalOtherDeductions = 0;
+    double totalCashBenefits = 0;
+    double totalNonCashBenefits = 0;
+    double totalTaxableNonCashBenefits = 0;
+    double totalInsuranceRelief = 0;
+
+    for (var salary in salaries) {
+      if (salary.employeeId.isNotEmpty) { // Skip if already a totals row
+        totalGrossPay += salary.grossPay;
+        totalHouseAllowance += salary.houseAllowance;
+        totalNetPay += salary.netPay;
+        totalDeductions += salary.totalDeductions;
+        totalOvertimeAmount += salary.overtimeAmount;
+        totalEarnings += salary.earnings;
+        totalShifDeduction += salary.shifDeduction;
+        totalNssfTierIDeduction += salary.nssfTierIDeduction;
+        totalNssfTierIIDeduction += salary.nssfTierIIDeduction;
+        totalHousingLevy += salary.housingLevy;
+        totalPensionContributions += salary.pensionContributions;
+        totalPayeDeduction += salary.payeDeduction;
+        totalOtherDeductions += salary.otherDeductions;
+        totalCashBenefits += salary.cashBenefits;
+        totalNonCashBenefits += salary.nonCashBenefits;
+        totalTaxableNonCashBenefits += salary.taxableNonCashBenefits;
+        totalInsuranceRelief += salary.insuranceRelief;
+      }
+    }
+
+    return SalaryRecord.totals(
+      totalGrossPay: totalGrossPay,
+      totalHouseAllowance: totalHouseAllowance,
+      totalNetPay: totalNetPay,
+      totalDeductions: totalDeductions,
+      totalOvertimeAmount: totalOvertimeAmount,
+      totalEarnings: totalEarnings,
+      totalShifDeduction: totalShifDeduction,
+      totalNssfTierIDeduction: totalNssfTierIDeduction,
+      totalNssfTierIIDeduction: totalNssfTierIIDeduction,
+      totalHousingLevy: totalHousingLevy,
+      totalPensionContributions: totalPensionContributions,
+      totalPayeDeduction: totalPayeDeduction,
+      totalOtherDeductions: totalOtherDeductions,
+      totalCashBenefits: totalCashBenefits,
+      totalNonCashBenefits: totalNonCashBenefits,
+      totalTaxableNonCashBenefits: totalTaxableNonCashBenefits,
+      totalInsuranceRelief: totalInsuranceRelief,
+      cashBenefitDescriptions: cashBenefitDescriptions,
+      nonCashBenefitDescriptions: nonCashBenefitDescriptions,
+      deductionDescriptions: deductionDescriptions,
+      salaries: salaries,
+      paymentDate: selectedPaymentDate ?? DateTime.now(),
+    );
+  }
+
+  // UI Components
   @override
   Widget build(BuildContext context) {
     final isAdmin = widget.user.role == 'admin';
 
     return Scaffold(
+      backgroundColor: backgroundColor,
       appBar: CustomAppBar(
         title: isAdmin ? 'Pay Salaries' : 'My Salary',
-        backgroundColor: Colors.teal[800],
-        onNotificationTap: () {
-          if (kDebugMode) print('Notifications tapped');
-        },
-        onProfileTap: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (context) => Container(
-              padding: const EdgeInsets.all(16),
+        backgroundColor: primaryColor,
+        onNotificationTap: () => _handleNotificationTap(),
+        onProfileTap: () => _showProfileBottomSheet(context),
+      ),
+      body: Column(
+        children: [
+          // Header Card with Filters
+          _buildHeaderCard(isAdmin),
+          
+          // Content Area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  ListTile(
-                    leading: Icon(Icons.person, color: Colors.teal[700]),
-                    title: Text('Profile: ${widget.user.username}'),
-                    subtitle: Text('Role: ${widget.user.role}'),
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout, color: Colors.red[700]),
-                    title: const Text('Logout'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _logout(context);
-                    },
+                  if (isAdmin) ...[
+                    _buildSearchSection(),
+                    const SizedBox(height: 8),
+                    if (salaries.isNotEmpty) _buildInstructions(),
+                  ],
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: isLoading
+                        ? _buildLoadingState()
+                        : salaries.isEmpty
+                            ? _buildEmptyState()
+                            : _buildSalaryTable(),
                   ),
                 ],
               ),
             ),
-          );
-        },
+          ),
+
+          // Footer Actions (Admin only)
+          if (isAdmin) _buildFooterActions(),
+        ],
       ),
-      body: Container(
+      floatingActionButton: isAdmin ? _buildFloatingActions() : null,
+    );
+  }
+
+  Widget _buildHeaderCard(bool isAdmin) {
+    return Card(
+      margin: const EdgeInsets.all(16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.teal[50]!, Colors.teal[100]!],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+            colors: [primaryColor, secondaryColor],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
-                  padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.white, Colors.teal[50]!],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withAlpha(51),
+                    shape: BoxShape.circle,
                   ),
+                  child: Icon(
+                    isAdmin ? Icons.payments : Icons.account_balance_wallet,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (isAdmin) ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDropdown(
-                                value: selectedMonth,
-                                items: List.generate(12, (index) => index + 1),
-                                itemBuilder: (month) => DateFormat('MMMM')
-                                    .format(DateTime(selectedYear, month)),
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedMonth = value!;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8.0),
-                            Expanded(
-                              child: _buildDropdown(
-                                value: selectedYear,
-                                items: List.generate(
-                                    10, (index) => DateTime.now().year - index),
-                                itemBuilder: (year) => year.toString(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedYear = value!;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8.0),
-                            Expanded(
-                              child: _buildDropdown(
-                                value: selectedCompanyId,
-                                items: companyIds,
-                                itemBuilder: (id) =>
-                                    companyIdToName[id] ?? 'Unknown',
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedCompanyId = value;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
+                      Text(
+                        isAdmin ? 'Salary Management' : 'My Salary',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
-                      ] else ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDropdown(
-                                value: selectedMonth,
-                                items: List.generate(12, (index) => index + 1),
-                                itemBuilder: (month) => DateFormat('MMMM')
-                                    .format(DateTime(selectedYear, month)),
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedMonth = value!;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 8.0),
-                            Expanded(
-                              child: _buildDropdown(
-                                value: selectedYear,
-                                items: List.generate(
-                                    10, (index) => DateTime.now().year - index),
-                                itemBuilder: (year) => year.toString(),
-                                onChanged: (value) {
-                                  setState(() {
-                                    selectedYear = value!;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                },
-                              ),
-                            ),
-                          ],
+                      ),
+                      Text(
+                        isAdmin 
+                            ? 'Process and manage employee salaries'
+                            : 'View your salary details and payslips',
+                        style:  TextStyle(
+                          color: Colors.white.withAlpha(230),
+                          fontSize: 14,
                         ),
-                        const SizedBox(height: 8.0),
-                        Text(
-                          'Company: ${companyIdToName[widget.user.companyId] ?? 'Unknown'}',
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.teal[900]),
-                        ),
-                      ],
-                      const SizedBox(height: 8.0),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () async {
-                                final DateTime? picked = await showDatePicker(
-                                  context: context,
-                                  initialDate:
-                                      selectedPaymentDate ?? DateTime.now(),
-                                  firstDate: DateTime(2000),
-                                  lastDate: DateTime(2100),
-                                  builder: (context, child) {
-                                    return Theme(
-                                      data: ThemeData.light().copyWith(
-                                        colorScheme: ColorScheme.light(
-                                          primary: Colors.teal[700]!,
-                                          onPrimary: Colors.white,
-                                          surface: Colors.teal[50]!,
-                                          onSurface: Colors.teal[900]!,
-                                        ),
-                                      ),
-                                      child: child!,
-                                    );
-                                  },
-                                );
-                                if (picked != null &&
-                                    picked != selectedPaymentDate) {
-                                  setState(() {
-                                    selectedPaymentDate = picked;
-                                    salaries.clear();
-                                    selectedEmployees.clear();
-                                    searchKeyword = '';
-                                  });
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.teal[200]!),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      selectedPaymentDate != null
-                                          ? DateFormat('yyyy-MM-dd')
-                                              .format(selectedPaymentDate!)
-                                          : 'Select Payment Date',
-                                      style: TextStyle(color: Colors.teal[900]),
-                                    ),
-                                    Icon(Icons.calendar_today,
-                                        color: Colors.teal[700]),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8.0),
-                          ElevatedButton(
-                            onPressed:
-                                isLoading ? null : fetchAndCalculateSalaries,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.teal[700],
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                            ),
-                            child: isLoading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white)
-                                : const Text('Fetch Salaries'),
-                          ),
-                        ],
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (isAdmin)
-                Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: Container(
-                    padding: const EdgeInsets.all(8.0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.white, Colors.teal[50]!],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: TextField(
-                      decoration: InputDecoration(
-                        labelText: 'Search by Full Name',
-                        labelStyle: TextStyle(color: Colors.teal[900]),
-                        prefixIcon: Icon(Icons.search, color: Colors.teal[700]),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.teal[200]!)),
-                        enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.teal[200]!)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            borderSide: BorderSide(color: Colors.teal[700]!)),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                      onChanged: (value) {
-                        if (_debounce?.isActive ?? false) _debounce!.cancel();
-                        _debounce =
-                            Timer(const Duration(milliseconds: 300), () {
-                          setState(() {
-                            searchKeyword = value.toLowerCase();
-                          });
-                        });
-                      },
-                      style: TextStyle(color: Colors.grey[800]),
-                    ),
-                  ),
-                ),
-              if (isAdmin && salaries.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: Text(
-                    'Instructions: Check the box next to an employee to exclude them from bulk payment.',
-                    style: TextStyle(fontSize: 12, color: Colors.teal[900]),
-                  ),
-                ),
-              Expanded(
-                child: isLoading
-                    ? Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.teal[700]),
-                      )
-                    : salaries.isEmpty
-                        ? Center(
-                            child: Text('No active salaries available',
-                                style: TextStyle(
-                                    color: Colors.teal[900], fontSize: 16)),
-                          )
-                        : Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.white, Colors.teal[50]!],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.vertical,
-                                  child: DataTable(
-                                    columnSpacing: 16,
-                                    dataRowHeight: 60,
-                                    headingRowColor: MaterialStateProperty.all(
-                                        Colors.teal[100]),
-                                    columns: _buildTableColumns(),
-                                    rows: _buildFilteredTableRows(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-              ),
-              if (isAdmin) const SizedBox(height: 16),
-              if (isAdmin)
-                ElevatedButton(
-                  onPressed: isLoading ? null : exportMasterPayroll,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal[700],
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 50, vertical: 15),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Export Master Payroll'),
-                ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildFilterSection(isAdmin),
+          ],
         ),
       ),
-      floatingActionButton: isAdmin
-          ? Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                FloatingActionButton(
-                  onPressed: () async {
-                    if (salaries.isEmpty ||
-                        salaries.last['fullname'] != 'Totals') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Please fetch salaries first.')),
-                      );
-                      return;
-                    }
-
-                    if (selectedCompanyId == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('No company selected.')),
-                      );
-                      return;
-                    }
-
-                    final selectedEmployeeId = selectedEmployees.entries
-                        .singleWhere((entry) => entry.value,
-                            orElse: () => const MapEntry('', false))
-                        .key;
-
-                    if (selectedEmployeeId.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'No employee selected for single payment.')),
-                      );
-                      return;
-                    }
-
-                    final selectedEmployee = salaries.firstWhere(
-                      (salary) => salary['employee_id'] == selectedEmployeeId,
-                      orElse: () => {},
-                    );
-
-                    if (selectedEmployee.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Selected employee not found.')),
-                      );
-                      return;
-                    }
-
-                    if (selectedEmployee['status'] == 'Already Paid') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content:
-                                Text('Salary already paid for this month.')),
-                      );
-                      return;
-                    }
-
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Confirm Single Payment'),
-                        content: Text(
-                            'Initiate payment for ${selectedEmployee['fullname']} (Net Pay: ${selectedEmployee['net_pay'].toStringAsFixed(2)})?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Confirm'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (confirm != true) return;
-
-                    setState(() => isLoading = true);
-
-                    try {
-                      final response = await widget.apiService
-                          .saveSalary(selectedEmployee, selectedCompanyId!);
-                      // If saveSalary returns void, just show a success message
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              'Single Payment initiated for ${selectedEmployee['fullname']}'),
-                          backgroundColor: Colors.teal[700],
-                        ),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('Error during single payment: $e')),
-                      );
-                    } finally {
-                      setState(() => isLoading = false);
-                    }
-                  },
-                  backgroundColor: Colors.teal[700],
-                  heroTag: 'single_payment',
-                  tooltip: 'Single Payment',
-                  child: const Icon(Icons.payment, color: Colors.white),
-                ),
-                const SizedBox(height: 16),
-                FloatingActionButton(
-                  onPressed: () async {
-                    if (salaries.isEmpty ||
-                        salaries.last['fullname'] != 'Totals') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Please fetch salaries first.')),
-                      );
-                      return;
-                    }
-
-                    if (selectedCompanyId == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('No company selected.')),
-                      );
-                      return;
-                    }
-
-                    final employeesToPay = salaries
-                        .where((salary) =>
-                            salary['fullname'] != 'Totals' &&
-                            !(selectedEmployees[salary['employee_id']] ??
-                                false))
-                        .toList();
-
-                    if (employeesToPay.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text(
-                                'No employees selected for bulk payment.')),
-                      );
-                      return;
-                    }
-
-                    final employeesAlreadyPaid = employeesToPay
-                        .where((salary) => salary['status'] == 'Already Paid')
-                        .toList();
-                    if (employeesAlreadyPaid.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              '${employeesAlreadyPaid.length} employee(s) already paid for this month.'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                      return;
-                    }
-
-                    final confirm = await showDialog<bool>(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Confirm Bulk Payment'),
-                        content: Text(
-                            'Initiate payment for ${employeesToPay.length} employees?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Confirm'),
-                          ),
-                        ],
-                      ),
-                    );
-
-                    if (confirm != true) return;
-
-                    setState(() => isLoading = true);
-
-                    try {
-                      for (var employee in employeesToPay) {
-                        await widget.apiService.saveSalary(employee, selectedCompanyId!);
-                        // If you want to update the status after saving, you may need to re-fetch salaries or handle status update differently.
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              'Bulk Payment initiated for ${employeesToPay.length} employees'),
-                          backgroundColor: Colors.teal[700],
-                        ),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('Error during bulk payment: $e')),
-                      );
-                    } finally {
-                      setState(() => isLoading = false);
-                    }
-                  },
-                  backgroundColor: Colors.teal[700],
-                  heroTag: 'bulk_payment',
-                  tooltip: 'Bulk Payment',
-                  child: const Icon(Icons.payments, color: Colors.white),
-                ),
-              ],
-            )
-          : null,
     );
   }
 
-  List<DataColumn> _buildTableColumns() {
+  Widget _buildFilterSection(bool isAdmin) {
+    return Column(
+      children: [
+        if (isAdmin) ...[
+          Row(
+            children: [
+              Expanded(child: _buildMonthDropdown()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildYearDropdown()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildCompanyDropdown()),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ] else ...[
+          Row(
+            children: [
+              Expanded(child: _buildMonthDropdown()),
+              const SizedBox(width: 12),
+              Expanded(child: _buildYearDropdown()),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withAlpha(26),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.business, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Company: ${companyIdToName[widget.user.companyId] ?? 'Unknown'}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildDatePicker()),
+            const SizedBox(width: 12),
+            _buildFetchButton(),
+          ],
+        ),
+        if (isAdmin) ...[
+          const SizedBox(height: 12),
+          _buildHousingLevyOnBonusCheckbox(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildMonthDropdown() {
+    return _buildDropdown<int>(
+      value: selectedMonth,
+      items: List.generate(12, (index) => index + 1),
+      itemBuilder: (month) => DateFormat('MMMM').format(DateTime(selectedYear, month)),
+      onChanged: (value) => _updateFilter(month: value),
+      hint: 'Select Month',
+    );
+  }
+
+  Widget _buildYearDropdown() {
+    return _buildDropdown<int>(
+      value: selectedYear,
+      items: List.generate(10, (index) => DateTime.now().year - index),
+      itemBuilder: (year) => year.toString(),
+      onChanged: (value) => _updateFilter(year: value),
+      hint: 'Select Year',
+    );
+  }
+
+  Widget _buildCompanyDropdown() {
+    return _buildDropdown<int?>(
+      value: selectedCompanyId,
+      items: companyIds,
+      itemBuilder: (id) => companyIdToName[id] ?? 'Unknown',
+      onChanged: (value) => _updateFilter(companyId: value),
+      hint: 'Select Company', 
+    );
+  }
+
+  Widget _buildDropdown<T>({
+    required T? value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+    required String hint,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(230),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButtonFormField<T>(
+        initialValue: value,
+        items: items
+            .map((item) => DropdownMenuItem(
+                  value: item, 
+                  child: Text(
+                    itemBuilder(item),
+                    style: TextStyle(color: textColor, fontSize: 14),
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Colors.transparent,
+          hintText: hint,
+          hintStyle: TextStyle(color: subtitleColor),
+        ),
+        icon: Icon(Icons.arrow_drop_down, color: primaryColor),
+        dropdownColor: cardColor,
+        style: TextStyle(color: textColor, fontSize: 14),
+      ),
+    );
+  }
+
+  Widget _buildDatePicker() {
+    return GestureDetector(
+      onTap: () => _showDatePicker(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(230),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              selectedPaymentDate != null
+                  ? DateFormat('EEE, MMM d, yyyy').format(selectedPaymentDate!)
+                  : 'Select Payment Date',
+              style: TextStyle(
+                color: selectedPaymentDate != null ? textColor : subtitleColor,
+                fontSize: 14,
+              ),
+            ),
+            Icon(Icons.calendar_today, color: primaryColor, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFetchButton() {
+    return ElevatedButton(
+      onPressed: isLoading ? null : fetchAndCalculateSalaries,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: primaryColor,
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 15),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      child: isLoading
+          ? SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.0,
+                color: primaryColor,
+              ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.refresh, size: 16),
+                SizedBox(width: 8),
+                Text('Fetch Salaries'),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildHousingLevyOnBonusCheckbox() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(230),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: CheckboxListTile(
+        title: Text(
+          'Include Bonus in Housing Levy Calculation',
+          style: TextStyle(color: textColor, fontSize: 14),
+        ),
+        value: _includeBonusInHousingLevy,
+        onChanged: (bool? value) {
+          if (value != null) {
+            setState(() {
+              _includeBonusInHousingLevy = value;
+            });
+            if (salaries.isNotEmpty) {
+              fetchAndCalculateSalaries();
+            }
+          }
+        },
+        activeColor: primaryColor,
+        controlAffinity: ListTileControlAffinity.leading,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12.0),
+        ),
+        child: TextField(
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            labelText: 'Search employees...',
+            labelStyle: TextStyle(color: subtitleColor),
+            prefixIcon: Icon(Icons.search, color: subtitleColor),
+            border: InputBorder.none,
+            filled: true,
+            fillColor: Colors.transparent,
+          ),
+          onChanged: _handleSearch,
+          style: TextStyle(color: textColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstructions() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accentColor.withAlpha(26),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accentColor.withAlpha(77)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: primaryColor, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Check the box next to an employee to exclude them from bulk payment.',
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: primaryColor),
+          const SizedBox(height: 16),
+          Text(
+            'Calculating salaries...',
+            style: TextStyle(
+              color: subtitleColor,
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.payments_outlined,
+            size: 64,
+            color: Colors.grey[400],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No salaries available',
+            style: TextStyle(
+              color: subtitleColor,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fetch salaries to view payment details',
+            style: TextStyle(
+              color: subtitleColor,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSalaryTable() {
+    final columnLabels = _getTableColumnLabels();
+    
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: DataTable(
+              columnSpacing: 20,              
+              dataRowMinHeight: 56,
+              dataRowMaxHeight: 56,
+              headingRowHeight: 56,
+              horizontalMargin: 20,
+              headingTextStyle: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              dataTextStyle: TextStyle(
+                color: textColor,
+                fontSize: 12,
+              ),
+              headingRowColor: WidgetStateProperty.all(Colors.grey[50]),
+              columns: columnLabels.map((label) => DataColumn(
+                label: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: textColor,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              )).toList(),
+              rows: _buildTableRows(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<String> _getTableColumnLabels() {
     final isAdmin = widget.user.role == 'admin';
-    final keys = [
-      if (isAdmin) 'Select',
+    final keys = <String>[];
+    
+    if (isAdmin) keys.add('Select');
+    
+    // Basic employee info
+    keys.addAll([
       'Employee ID',
       'Company Name',
       'Full Name',
       'Gross Pay',
       'House Allowance',
       'Basic Pay',
-      ...benefitDescriptions.map((desc) => desc),
+    ]);
+    
+    // Individual cash benefits
+    for (var desc in cashBenefitDescriptions) {
+      keys.add('Cash: $desc');
+    }
+    
+    // Individual non-cash benefits
+    for (var desc in nonCashBenefitDescriptions) {
+      keys.add('Non-Cash: $desc');
+    }
+    
+    // Benefit totals
+    keys.addAll([
+      'Total Cash Benefits',
       'Total Non-Cash Benefits',
+      'Taxable Non-Cash Benefits',
       'Overtime Amount',
       'Total Earnings',
       'Taxable Income',
-      ...deductionDescriptions.map((desc) => desc),
+    ]);
+    
+    // Individual deductions
+    for (var desc in deductionDescriptions) {
+      keys.add('Deduction: $desc');
+    }
+    
+    // Deduction totals and statutory
+    keys.addAll([
       'Total Other Deductions',
       'SHIF Deduction',
-      'NSSF Tier I Deduction',
-      'NSSF Tier II Deduction',
+      'NSSF Tier I',
+      'NSSF Tier II',
       'Housing Levy',
       'PAYE Deduction',
       'Pension Contributions',
@@ -1415,160 +1237,1482 @@ Future<Map<String, dynamic>> _checkPaidStatus(
       'Net Pay',
       'Payment Date',
       'Status',
-    ];
-
-    return keys.map((key) {
-      return DataColumn(
-        label: Text(
-          key.replaceAll('_', ' ').capitalize(),
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: Colors.teal[900],
-            fontSize: 14,
-          ),
-        ),
-      );
-    }).toList();
+    ]);
+    
+    return keys.map((key) => key.replaceAll('_', ' ').capitalize()).toList();
   }
 
-  List<DataRow> _buildFilteredTableRows() {
-    final filteredSalaries = salaries.where((salary) {
-      if (widget.user.role == 'admin' && salary['fullname'] == 'Totals') {
-        return true;
-      }
-      final fullName = salary['fullname']?.toString().toLowerCase() ?? '';
-      return fullName.contains(searchKeyword);
-    }).toList();
-
+  List<DataRow> _buildTableRows() {
+    final filteredSalaries = _getFilteredSalaries();
+    
     return filteredSalaries.map((salary) {
       final isAdmin = widget.user.role == 'admin';
-      final keys = [
-        if (isAdmin) 'Select',
-        'employee_id',
-        'company_name',
-        'fullname',
-        'gross_pay',
-        'house_allowance',
-        'basic_pay',
-        ...benefitDescriptions.map((desc) => 'benefit_$desc'),
-        'non_cash_benefits',
-        'overtime_amount',
-        'earnings',
-        'taxable_income',
-        ...deductionDescriptions.map((desc) => 'deduction_$desc'),
-        'deductions',
-        'shif_deduction',
-        'nssf_tier_i_deduction',
-        'nssf_tier_ii_deduction',
-        'housing_levy',
-        'paye_deduction',
-        'pension_contributions',
-        'insurance_relief',
-        'total_deductions',
-        'net_pay',
-        'payment_date',
-        'status',
-      ];
-
+      final isTotalRow = salary.isTotalsRow;
+      
       return DataRow(
-        cells: keys.map((key) {
-          if (key == 'Select') {
-            return DataCell(Checkbox(
-              value: salary['fullname'] != 'Totals'
-                  ? selectedEmployees[salary['employee_id']] ?? false
-                  : null,
-              tristate: true,
-              onChanged: salary['fullname'] != 'Totals'
-                  ? (value) {
-                      setState(() {
-                        selectedEmployees[salary['employee_id']] = value!;
-                      });
-                    }
-                  : null,
-              activeColor: Colors.teal[700],
-            ));
-          } else {
-            final value = salary[key] ??
-                (key == 'fullname'
-                    ? 'Unknown'
-                    : key == 'company_name'
-                        ? ''
-                        : key == 'employee_id'
-                            ? ''
-                            : key == 'house_allowance'
-                                ? 0.0
-                                : key == 'payment_date'
-                                    ? ''
-                                    : key == 'status'
-                                        ? 'Pending'
-                                        : 0.0);
-
-            if (value is num) {
-              if (salary['fullname'] == 'Totals') {
-                return DataCell(Text(
-                  value.toStringAsFixed(2),
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.teal[900]),
-                ));
-              }
-              return DataCell(
-                Text(
-                  value.toStringAsFixed(2),
-                  style: TextStyle(color: Colors.grey[800]),
-                ),
-                onTap: () => showSalarySlip(salary),
-              );
-            } else {
-              return DataCell(
-                Text(value.toString(),
-                    style: TextStyle(
-                        color: value == 'Already Paid'
-                            ? Colors.red[700]
-                            : Colors.grey[800])),
-                onTap: () => showSalarySlip(salary),
-              );
-            }
-          }
-        }).toList(),
+        color: isTotalRow
+            ? WidgetStateProperty.all(primaryColor.withAlpha(26))
+            : null,
+        cells: _buildTableCellData(salary, isAdmin, isTotalRow),
       );
     }).toList();
   }
 
-  Widget _buildDropdown<T>({
-    required T? value,
-    required List<T> items,
-    required String Function(T) itemBuilder,
-    required ValueChanged<T?> onChanged,
-  }) {
+  List<SalaryRecord> _getFilteredSalaries() {
+    return salaries.where((salary) {
+      if (salary.isTotalsRow) return true;
+      final fullName = salary.fullname.toLowerCase();
+      return fullName.contains(searchKeyword.toLowerCase());
+    }).toList();
+  }
+
+  List<DataCell> _buildTableCellData(SalaryRecord salary, bool isAdmin, bool isTotalRow) {
+    final cells = <DataCell>[];
+    
+    if (isAdmin) {
+      cells.add(DataCell(
+        Checkbox(
+          value: !isTotalRow ? selectedEmployees[salary.employeeId] ?? false : null,
+          tristate: true,
+          onChanged: !isTotalRow ? (value) {
+            setState(() {
+              selectedEmployees[salary.employeeId] = value!;
+            });
+          } : null,
+          activeColor: primaryColor,
+        ),
+      ));
+    }
+    
+    // Add all data cells in the correct order
+    cells.addAll([
+      _buildTextCell(salary.employeeId, isTotalRow),
+      _buildTextCell(salary.companyName, isTotalRow),
+      _buildTextCell(salary.fullname, isTotalRow, isName: true),
+      _buildCurrencyCell(salary.grossPay, isTotalRow),
+      _buildCurrencyCell(salary.houseAllowance, isTotalRow),
+      _buildCurrencyCell(salary.basicPay, isTotalRow),
+    ]);
+
+    // Add individual cash benefits
+    for (var desc in cashBenefitDescriptions) {
+      final key = 'cash_benefit_$desc';
+      final value = salary.additionalFields[key];
+      cells.add(_buildCurrencyCell(value is double ? value : 0.0, isTotalRow));
+    }
+
+    // Add individual non-cash benefits
+    for (var desc in nonCashBenefitDescriptions) {
+      final key = 'non_cash_benefit_$desc';
+      final value = salary.additionalFields[key];
+      cells.add(_buildCurrencyCell(value is double ? value : 0.0, isTotalRow));
+    }
+
+    // Add remaining fields
+    cells.addAll([
+      _buildCurrencyCell(salary.cashBenefits, isTotalRow),
+      _buildCurrencyCell(salary.nonCashBenefits, isTotalRow),
+      _buildCurrencyCell(salary.taxableNonCashBenefits, isTotalRow),
+      _buildCurrencyCell(salary.overtimeAmount, isTotalRow),
+      _buildCurrencyCell(salary.earnings, isTotalRow),
+      _buildCurrencyCell(salary.taxableIncome, isTotalRow),
+    ]);
+
+    // Add individual deductions
+    for (var desc in deductionDescriptions) {
+      final key = 'deduction_$desc';
+      final value = salary.additionalFields[key];
+      cells.add(_buildCurrencyCell(value is double ? value : 0.0, isTotalRow));
+    }
+
+    // Add remaining deduction fields
+    cells.addAll([
+      _buildCurrencyCell(salary.otherDeductions, isTotalRow),
+      _buildCurrencyCell(salary.shifDeduction, isTotalRow),
+      _buildCurrencyCell(salary.nssfTierIDeduction, isTotalRow),
+      _buildCurrencyCell(salary.nssfTierIIDeduction, isTotalRow),
+      _buildCurrencyCell(salary.housingLevy, isTotalRow),
+      _buildCurrencyCell(salary.payeDeduction, isTotalRow),
+      _buildCurrencyCell(salary.pensionContributions, isTotalRow),
+      _buildCurrencyCell(salary.insuranceRelief, isTotalRow),
+      _buildCurrencyCell(salary.totalDeductions, isTotalRow),
+      _buildCurrencyCell(salary.netPay, isTotalRow, isNetPay: true),
+      _buildTextCell(salary.formattedPaymentDate, isTotalRow),
+      _buildStatusCell(salary.status, isTotalRow),
+    ]);
+    
+    return cells;
+  }
+
+  DataCell _buildTextCell(String? value, bool isTotalRow, {bool isName = false}) {
+    final displayValue = value ?? '';
+    return DataCell(
+      Tooltip(
+        message: displayValue,
+        child: Text(
+          displayValue,
+          style: TextStyle(
+            color: isTotalRow ? primaryColor : textColor,
+            fontWeight: isTotalRow ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+      onTap: !isTotalRow && isName ? () => _showSalarySlip(_findSalaryById(value ?? '')) : null,
+    );
+  }
+
+  DataCell _buildCurrencyCell(double? value, bool isTotalRow, {bool isNetPay = false}) {
+    final displayValue = _formatCurrency(value ?? 0);
+    return DataCell(
+      Tooltip(
+        message: displayValue,
+        child: Text(
+          displayValue,
+          style: TextStyle(
+            color: isTotalRow 
+                ? primaryColor 
+                : isNetPay 
+                    ? primaryColor 
+                    : textColor,
+            fontWeight: isTotalRow || isNetPay ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildStatusCell(String status, bool isTotalRow) {
+    return DataCell(
+      Tooltip(
+        message: status,
+        child: Text(
+          status,
+          style: TextStyle(
+            color: status == 'Already Paid' ? Colors.red : 
+                   isTotalRow ? primaryColor : textColor,
+            fontWeight: isTotalRow ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooterActions() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
+        color: cardColor,
+        border: Border(top: BorderSide(color: Colors.grey[200]!)),
       ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
+      child: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: isLoading ? null : exportMasterPayroll,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 2,
+              ),
+              child: isLoading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.download, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Export Master Payroll'),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFloatingActions() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FloatingActionButton(
+          onPressed: _handleBulkPayment,
+          backgroundColor: primaryColor,
+          heroTag: 'bulk_payment',
+          tooltip: 'Bulk Payment',
+          child: const Icon(Icons.payments, color: Colors.white),
+        ),
+        const SizedBox(height: 12),
+        FloatingActionButton(
+          onPressed: _handleSinglePayment,
+          backgroundColor: secondaryColor,
+          heroTag: 'single_payment',
+          tooltip: 'Single Payment',
+          child: const Icon(Icons.payment, color: Colors.white),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showDatePicker() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedPaymentDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              surface: cardColor,
+              onSurface: textColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null && picked != selectedPaymentDate) {
+      setState(() {
+        selectedPaymentDate = picked;
+        salaries.clear();
+        selectedEmployees.clear();
+        searchKeyword = '';
+      });
+    }
+  }
+
+  void _handleSearch(String value) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      setState(() {
+        searchKeyword = value.toLowerCase();
+      });
+    });
+  }
+
+  void _updateFilter({int? month, int? year, int? companyId}) {
+    setState(() {
+      if (month != null) selectedMonth = month;
+      if (year != null) selectedYear = year;
+      if (companyId != null) selectedCompanyId = companyId;
+      salaries.clear();
+      selectedEmployees.clear();
+      searchKeyword = '';
+    });
+  }
+
+  // Actions
+  Future<void> exportMasterPayroll() async {
+    if (salaries.isEmpty) {
+      _showErrorSnackBar('Please fetch salaries first.');
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      final headers = _getTableColumnLabels()
+          .where((header) => header != 'Select')
+          .toList();
+
+      final List<List<String>> csvData = [headers];
+
+      for (var salary in salaries) {
+        final row = _buildCsvRow(salary);
+        csvData.add(row);
+      }
+
+      final csvString = const ListToCsvConverter().convert(csvData);
+      final fileName = _generateFileName();
+      
+      await _saveCsvFile(csvString, fileName);
+      if (!mounted) return;
+      _showSuccessSnackBar('Master Payroll exported successfully');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Error exporting master payroll: $e');
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  List<String> _buildCsvRow(SalaryRecord salary) {
+    final row = <String>[
+      salary.employeeId,
+      salary.companyName ?? '', // Ensure non-nullable string
+      salary.fullname,
+      _formatNumber(salary.grossPay),
+      _formatNumber(salary.houseAllowance),
+      _formatNumber(salary.basicPay),
+    ];
+
+    // Add individual cash benefits
+    for (var desc in cashBenefitDescriptions) {
+      final key = 'cash_benefit_$desc';
+      final value = salary.additionalFields[key];
+      row.add(_formatNumber(value is double ? value : 0.0));
+    }
+
+    // Add individual non-cash benefits
+    for (var desc in nonCashBenefitDescriptions) {
+      final key = 'non_cash_benefit_$desc';
+      final value = salary.additionalFields[key];
+      row.add(_formatNumber(value is double ? value : 0.0));
+    }
+
+    // Add benefit totals
+    row.addAll([
+      _formatNumber(salary.cashBenefits),
+      _formatNumber(salary.nonCashBenefits),
+      _formatNumber(salary.taxableNonCashBenefits),
+      _formatNumber(salary.overtimeAmount),
+      _formatNumber(salary.earnings),
+      _formatNumber(salary.taxableIncome),
+    ]);
+
+    // Add individual deductions
+    for (var desc in deductionDescriptions) {
+      final key = 'deduction_$desc';
+      final value = salary.additionalFields[key];
+      row.add(_formatNumber(value is double ? value : 0.0));
+    }
+
+    // Add remaining fields
+    row.addAll([
+      _formatNumber(salary.otherDeductions),
+      _formatNumber(salary.shifDeduction),
+      _formatNumber(salary.nssfTierIDeduction),
+      _formatNumber(salary.nssfTierIIDeduction),
+      _formatNumber(salary.housingLevy),
+      _formatNumber(salary.payeDeduction),
+      _formatNumber(salary.pensionContributions),
+      _formatNumber(salary.insuranceRelief),
+      _formatNumber(salary.totalDeductions),
+      _formatNumber(salary.netPay),
+      salary.formattedPaymentDate,
+      salary.status,
+    ]);
+
+    return row.map((e) => e.replaceAll(',', '')).toList();
+  }
+
+  String _formatNumber(double value) {
+    return value.toStringAsFixed(2);
+  }
+
+  String _generateFileName() {
+    final companyName = companyIdToName[selectedCompanyId]!;
+    final dateStr = selectedPaymentDate != null
+        ? DateFormat('yyyy-MM-dd').format(selectedPaymentDate!)
+        : DateFormat('yyyy-MM-dd').format(DateTime.now());
+    return 'MasterPayroll_${dateStr}_${companyName.replaceAll(' ', '_')}.csv';
+  }
+
+  Future<void> _saveCsvFile(String csvString, String fileName) async {
+    final csvBytes = utf8.encode(csvString);
+
+    if (kIsWeb) {
+      final blob = html.Blob([csvBytes]);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..click();
+      html.Url.revokeObjectUrl(url);
+    } else {
+      String filePath;
+      if (Platform.isWindows) {
+        final directory = Directory(r'C:\payroll_exports');
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        filePath = '${directory.path}\\$fileName';
+      } else {
+        final directory = await getDownloadsDirectory();
+        if (directory == null) {
+          throw Exception('Could not access Downloads directory');
+        }
+        filePath = '${directory.path}/$fileName';
+      }
+      final file = File(filePath);
+      await file.writeAsBytes(csvBytes);
+      if (!mounted) return;
+      _showSuccessSnackBar('CSV file saved to: $filePath');
+    }
+  }
+
+  Future<void> _handleSinglePayment() async {
+    final selectedEmployeeId = _getSelectedEmployeeId();
+    if (selectedEmployeeId.isEmpty) {
+      _showErrorSnackBar('No employee selected for single payment.');
+      return;
+    }
+
+    final selectedEmployee = _findSalaryById(selectedEmployeeId);
+    if (selectedEmployee == null) {
+      _showErrorSnackBar('Selected employee not found.');
+      return;
+    }
+
+    if (selectedEmployee.status == 'Already Paid') {
+      _showErrorSnackBar('Salary already paid for this month.');
+      return;
+    }
+
+    final confirm = await _showConfirmationDialog(
+      'Confirm Single Payment',
+      'Initiate payment for ${selectedEmployee.fullname}?\nNet Pay: ${_formatCurrency(selectedEmployee.netPay)}',
+    );
+
+    if (confirm != true) return;
+
+    await _processPayment([selectedEmployee], 'single');
+  }
+
+  Future<void> _handleBulkPayment() async {
+    final employeesToPay = _getEmployeesToPay();
+    if (employeesToPay.isEmpty) {
+      _showErrorSnackBar('No employees selected for bulk payment.');
+      return;
+    }
+
+    final alreadyPaid = employeesToPay.where((s) => s.status == 'Already Paid').toList();
+    if (alreadyPaid.isNotEmpty) {
+      _showErrorSnackBar('${alreadyPaid.length} employee(s) already paid for this month.');
+      return;
+    }
+
+    final totalNetPay = employeesToPay.fold<double>(0.0, (sum, emp) => sum + emp.netPay);
+    
+    final confirm = await _showConfirmationDialog(
+      'Confirm Bulk Payment',
+      'Initiate payment for ${employeesToPay.length} employees?\nTotal Net Pay: ${_formatCurrency(totalNetPay)}',
+    );
+
+    if (confirm != true) return;
+
+    await _processPayment(employeesToPay, 'bulk');
+  }
+
+  String _getSelectedEmployeeId() {
+    return selectedEmployees.entries
+        .singleWhere((entry) => entry.value, orElse: () => MapEntry('', false))
+        .key;
+  }
+
+  SalaryRecord? _findSalaryById(String employeeId) {
+    try {
+      return salaries.firstWhere(
+        (salary) => salary.employeeId == employeeId,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  List<SalaryRecord> _getEmployeesToPay() {
+    return salaries.where((salary) {
+      return !salary.isTotalsRow && 
+             salary.employeeId.isNotEmpty &&
+             !(selectedEmployees[salary.employeeId] ?? false);
+    }).toList();
+  }
+
+  Future<bool?> _showConfirmationDialog(String title, String content) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.payment,
+                size: 48,
+                color: primaryColor,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                content,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: subtitleColor,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(color: subtitleColor),
+                      ),
+                    ),
                   ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Confirm'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  Future<void> _processPayment(List<SalaryRecord> employees, String type) async {
+    if (!mounted) return;
+    setState(() => isLoading = true);
+
+    try {
+      for (var employee in employees) {
+        final salaryData = employee.toApiMap();
+        await widget.apiService.saveSalary(salaryData, selectedCompanyId!);
+      }
+      if (!mounted) return;
+      _showSuccessSnackBar(
+        '${type.capitalize()} payment initiated for ${employees.length} employee${employees.length > 1 ? 's' : ''}'
+      );
+      
+      await fetchAndCalculateSalaries();
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Error during $type payment: $e');
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  void _showSalarySlip(SalaryRecord? salary) {
+    if (salary == null || salary.isTotalsRow) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => SalarySlipDialog(
+        salary: salary,
+        primaryColor: primaryColor,
+        cardColor: cardColor,
+        textColor: textColor,
+        subtitleColor: subtitleColor,
+        formatCurrency: _formatCurrency,
+        cashBenefitDescriptions: cashBenefitDescriptions,
+        nonCashBenefitDescriptions: nonCashBenefitDescriptions,
+        deductionDescriptions: deductionDescriptions,
+      ),
+    );
+  }
+
+  // Helper methods
+  String _formatCurrency(double amount) {
+    return NumberFormat.currency(locale: 'en_KE', symbol: 'KES ').format(amount);
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(        
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(        
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _handleNotificationTap() {
+    if (kDebugMode) print('Notifications tapped');
+  }
+
+  void _showProfileBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _buildProfileSheet(),
+    );
+  }
+
+  Widget _buildProfileSheet() {
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: primaryColor.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.person, color: primaryColor),
+            ),
+            title: Text(
+              widget.user.username ?? 'User',
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              widget.user.role,
+              style: TextStyle(color: subtitleColor),
+            ),
+          ),
+          Divider(color: Colors.grey[300]),
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withAlpha(26),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.logout, color: Colors.red),
+            ),
+            title: Text(
+              'Logout',
+              style: TextStyle(color: Colors.red),
+            ),
+            onTap: () {
+              Navigator.pop(context);
+              _logout();
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Logout',
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to log out?',
+          style: TextStyle(color: subtitleColor),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: subtitleColor),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+    }
+  }
+}
+
+// Supporting Classes
+
+class SalaryCalculation {
+  final String employeeId;
+  final String fullname;
+  final int companyId;
+  final String? companyName;
+  final double originalGrossPay;
+  final double houseAllowance;
+  final double basicPay;
+  final bool isPaid;
+  final BenefitResult benefitResult;
+  final double overtimeAmount;
+  final List<Map<String, dynamic>> earnings;
+  final double totalEarnings;
+  final List<Map<String, dynamic>> deductions;
+  final double pensionContributions;
+  final double loanRepayment;
+  final double insuranceRelief;
+  final double grossPay;
+  final double nssfTierIDeduction;
+  final double nssfTierIIDeduction;
+  final double shifDeduction;
+  final double housingLevy;
+  final double totalOtherDeductions;
+  final double taxableIncome;
+  final double payeDeduction;
+  final double netPay;
+  final Map<String, double> cashBenefitAmounts;
+  final Map<String, double> nonCashBenefitAmounts;
+  final Map<String, double> deductionAmounts;
+  final double bonusAmount;
+
+  SalaryCalculation({
+    required this.employeeId,
+    required this.fullname,
+    required this.companyId,
+    required this.companyName,
+    required this.originalGrossPay,
+    required this.houseAllowance,
+    required this.basicPay,
+    required this.isPaid,
+    required this.benefitResult,
+    required this.overtimeAmount,
+    required this.earnings,
+    required this.totalEarnings,
+    required this.deductions,
+    required this.pensionContributions,
+    required this.loanRepayment,
+    required this.insuranceRelief,
+    required this.grossPay,
+    required this.nssfTierIDeduction,
+    required this.nssfTierIIDeduction,
+    required this.shifDeduction,
+    required this.housingLevy,
+    required this.totalOtherDeductions,
+    required this.taxableIncome,
+    required this.payeDeduction,
+    required this.netPay,
+    required this.cashBenefitAmounts,
+    required this.nonCashBenefitAmounts,
+    required this.deductionAmounts,
+    required this.bonusAmount,
+  });
+}
+
+class BenefitResult {
+  final double totalCashBenefits;
+  final double totalNonCashBenefits;
+  final double taxableNonCashBenefits;
+  final Map<String, double> cashBenefitAmounts;
+  final Map<String, double> nonCashBenefitAmounts;
+  final Map<String, double> deductionAmounts;
+  final double bonusAmount;
+
+  BenefitResult({
+    required this.totalCashBenefits,
+    required this.totalNonCashBenefits,
+    required this.taxableNonCashBenefits,
+    required this.cashBenefitAmounts,
+    required this.nonCashBenefitAmounts,
+    required this.deductionAmounts,
+    this.bonusAmount = 0.0,
+  });
+}
+
+class SalaryRecord {
+  final String employeeId;
+  final String fullname;
+  final int companyId;
+  final String? companyName;
+  final double grossPay;
+  final double houseAllowance;
+  final double basicPay;
+  final double cashBenefits;
+  final double nonCashBenefits;
+  final double taxableNonCashBenefits;
+  final double overtimeAmount;
+  final double earnings;
+  final double taxableIncome;
+  final double shifDeduction;
+  final double nssfTierIDeduction;
+  final double nssfTierIIDeduction;
+  final double housingLevy;
+  final double pensionContributions;
+  final double payeDeduction;
+  final double otherDeductions;
+  final double insuranceRelief;
+  final double totalDeductions;
+  final double netPay;
+  final DateTime paymentDate;
+  final String status;
+  final bool isTotalsRow;
+  final Map<String, dynamic> additionalFields;
+
+  SalaryRecord({
+    required this.employeeId,
+    required this.fullname,
+    required this.companyId,
+    required this.companyName,
+    required this.grossPay,
+    required this.houseAllowance,
+    required this.basicPay,
+    required this.cashBenefits,
+    required this.nonCashBenefits,
+    required this.taxableNonCashBenefits,
+    required this.overtimeAmount,
+    required this.earnings,
+    required this.taxableIncome,
+    required this.shifDeduction,
+    required this.nssfTierIDeduction,
+    required this.nssfTierIIDeduction,
+    required this.housingLevy,
+    required this.pensionContributions,
+    required this.payeDeduction,
+    required this.otherDeductions,
+    required this.insuranceRelief,
+    required this.totalDeductions,
+    required this.netPay,
+    required this.paymentDate,
+    required this.status,
+    this.isTotalsRow = false,
+    this.additionalFields = const {},
+  });
+
+  factory SalaryRecord.fromCalculation(
+    SalaryCalculation calc,
+    DateTime paymentDate,
+    bool isAdmin,
+  ) {
+    return SalaryRecord(
+      employeeId: calc.employeeId,
+      fullname: calc.fullname,
+      companyId: calc.companyId,
+      companyName: calc.companyName,
+      grossPay: calc.grossPay,
+      houseAllowance: calc.houseAllowance,
+      basicPay: calc.basicPay,
+      cashBenefits: calc.benefitResult.totalCashBenefits,
+      nonCashBenefits: calc.benefitResult.totalNonCashBenefits,
+      taxableNonCashBenefits: calc.benefitResult.taxableNonCashBenefits,
+      overtimeAmount: calc.overtimeAmount,
+      earnings: calc.totalEarnings,
+      taxableIncome: calc.taxableIncome,
+      shifDeduction: calc.shifDeduction,
+      nssfTierIDeduction: calc.nssfTierIDeduction,
+      nssfTierIIDeduction: calc.nssfTierIIDeduction,
+      housingLevy: calc.housingLevy,
+      pensionContributions: calc.pensionContributions,
+      payeDeduction: calc.payeDeduction,
+      otherDeductions: calc.totalOtherDeductions,
+      insuranceRelief: calc.insuranceRelief,
+      totalDeductions: calc.payeDeduction +
+          calc.shifDeduction +
+          calc.nssfTierIDeduction +
+          calc.nssfTierIIDeduction +
+          calc.housingLevy +
+          calc.totalOtherDeductions +
+          calc.pensionContributions,
+      netPay: calc.netPay,
+      paymentDate: paymentDate,
+      status: calc.isPaid ? 'Already Paid' : 'Pending',
+      additionalFields: {
+        ...calc.cashBenefitAmounts.map((key, value) => MapEntry('cash_benefit_$key', value)),
+        ...calc.nonCashBenefitAmounts.map((key, value) => MapEntry('non_cash_benefit_$key', value)),
+        ...calc.deductionAmounts.map((key, value) => MapEntry('deduction_$key', value)),
+      },
+    );
+  }
+
+  factory SalaryRecord.totals({
+    required double totalGrossPay,
+    required double totalHouseAllowance,
+    required double totalNetPay,
+    required double totalDeductions,
+    required double totalOvertimeAmount,
+    required double totalEarnings,
+    required double totalShifDeduction,
+    required double totalNssfTierIDeduction,
+    required double totalNssfTierIIDeduction,
+    required double totalHousingLevy,
+    required double totalPensionContributions,
+    required double totalPayeDeduction,
+    required double totalOtherDeductions,
+    required double totalCashBenefits,
+    required double totalNonCashBenefits,
+    required double totalTaxableNonCashBenefits,
+    required double totalInsuranceRelief,
+    required Set<String> cashBenefitDescriptions,
+    required Set<String> nonCashBenefitDescriptions,
+    required Set<String> deductionDescriptions,
+    required List<SalaryRecord> salaries,
+    required DateTime paymentDate,
+  }) {
+    final additionalFields = <String, dynamic>{};
+    
+    // Calculate totals for cash benefits
+    for (var desc in cashBenefitDescriptions) {
+      final total = salaries.fold<double>(0.0, (sum, record) {
+        if (record.employeeId.isEmpty) return sum; // Skip totals row
+        final value = record.additionalFields['cash_benefit_$desc'];
+        return sum + (value is double ? value : 0.0);
+      });
+      additionalFields['cash_benefit_$desc'] = total;
+    }
+    
+    // Calculate totals for non-cash benefits
+    for (var desc in nonCashBenefitDescriptions) {
+      final total = salaries.fold<double>(0.0, (sum, record) {
+        if (record.employeeId.isEmpty) return sum; // Skip totals row
+        final value = record.additionalFields['non_cash_benefit_$desc'];
+        return sum + (value is double ? value : 0.0);
+      });
+      additionalFields['non_cash_benefit_$desc'] = total;
+    }
+    
+    // Calculate totals for deductions
+    for (var desc in deductionDescriptions) {
+      final total = salaries.fold<double>(0.0, (sum, record) {
+        if (record.employeeId.isEmpty) return sum; // Skip totals row
+        final value = record.additionalFields['deduction_$desc'];
+        return sum + (value is double ? value : 0.0);
+      });
+      additionalFields['deduction_$desc'] = total;
+    }
+    
+    return SalaryRecord(
+      employeeId: '',
+      fullname: 'Totals',
+      companyId: 0,
+      companyName: null,
+      grossPay: totalGrossPay,
+      houseAllowance: totalHouseAllowance,
+      basicPay: 0,
+      cashBenefits: totalCashBenefits,
+      nonCashBenefits: totalNonCashBenefits,
+      taxableNonCashBenefits: totalTaxableNonCashBenefits,
+      overtimeAmount: totalOvertimeAmount,
+      earnings: totalEarnings,
+      taxableIncome: 0,
+      shifDeduction: totalShifDeduction,
+      nssfTierIDeduction: totalNssfTierIDeduction,
+      nssfTierIIDeduction: totalNssfTierIIDeduction,
+      housingLevy: totalHousingLevy,
+      pensionContributions: totalPensionContributions,
+      payeDeduction: totalPayeDeduction,
+      otherDeductions: totalOtherDeductions,
+      insuranceRelief: totalInsuranceRelief,
+      totalDeductions: totalDeductions,
+      netPay: totalNetPay,
+      paymentDate: paymentDate,
+      status: 'Totals',
+      isTotalsRow: true,
+      additionalFields: additionalFields,
+    );
+  }
+
+  factory SalaryRecord.empty() {
+    return SalaryRecord(
+      employeeId: '',
+      fullname: '',
+      companyId: 0,
+      companyName: null,
+      grossPay: 0,
+      houseAllowance: 0,
+      basicPay: 0,
+      cashBenefits: 0,
+      nonCashBenefits: 0,
+      taxableNonCashBenefits: 0,
+      overtimeAmount: 0,
+      earnings: 0,
+      taxableIncome: 0,
+      shifDeduction: 0,
+      nssfTierIDeduction: 0,
+      nssfTierIIDeduction: 0,
+      housingLevy: 0,
+      pensionContributions: 0,
+      payeDeduction: 0,
+      otherDeductions: 0,
+      insuranceRelief: 0,
+      totalDeductions: 0,
+      netPay: 0,
+      paymentDate: DateTime.now(),
+      status: '',
+    );
+  }
+
+  String get formattedPaymentDate {
+    return DateFormat('yyyy-MM-dd').format(paymentDate);
+  }
+
+  Map<String, dynamic> toApiMap() {
+    return {
+      'employee_id': employeeId,
+      'company_id': companyId,
+      'gross_pay': grossPay,
+      'house_allowance': houseAllowance,
+      'basic_pay': basicPay,
+      'cash_benefits': cashBenefits,
+      'non_cash_benefits': nonCashBenefits,
+      'taxable_non_cash_benefits': taxableNonCashBenefits,
+      'overtime_amount': overtimeAmount,
+      'earnings': earnings,
+      'taxable_income': taxableIncome,
+      'shif_deduction': shifDeduction,
+      'nssf_tier_i_deduction': nssfTierIDeduction,
+      'nssf_tier_ii_deduction': nssfTierIIDeduction,
+      'housing_levy': housingLevy,
+      'pension_contributions': pensionContributions,
+      'paye_deduction': payeDeduction,
+      'deductions': otherDeductions,
+      'insurance_relief': insuranceRelief,
+      'total_deductions': totalDeductions,
+      'net_pay': netPay,
+      'payment_date': formattedPaymentDate,
+      'status': status,
+      ...additionalFields,
+    };
+  }
+}
+
+class SalarySlipDialog extends StatelessWidget {
+  final SalaryRecord salary;
+  final Color primaryColor;
+  final Color cardColor;
+  final Color textColor;
+  final Color subtitleColor;
+  final String Function(double) formatCurrency;
+  final Set<String> cashBenefitDescriptions;
+  final Set<String> nonCashBenefitDescriptions;
+  final Set<String> deductionDescriptions;
+
+  const SalarySlipDialog({
+    super.key,
+    required this.salary,
+    required this.primaryColor,
+    required this.cardColor,
+    required this.textColor,
+    required this.subtitleColor,
+    required this.formatCurrency,
+    required this.cashBenefitDescriptions,
+    required this.nonCashBenefitDescriptions,
+    required this.deductionDescriptions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.receipt_long,
+                    size: 40,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Salary Slip',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    salary.fullname,
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(230),
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildSlipSection('Employee Information', [
+                      _buildSlipRow('Employee ID', salary.employeeId),
+                      _buildSlipRow('Company', salary.companyName ?? 'N/A'),
+                      _buildSlipRow('Payment Date', salary.formattedPaymentDate),
+                      _buildSlipRow('Status', salary.status,
+                          isHighlighted: salary.status == 'Already Paid'),
+                    ]),
+                    
+                    _buildSlipSection('Earnings', [
+                      _buildSlipRow('Gross Pay', formatCurrency(salary.grossPay)),
+                      _buildSlipRow('House Allowance', formatCurrency(salary.houseAllowance)),
+                      _buildSlipRow('Basic Pay', formatCurrency(salary.basicPay)),
+                      
+                      // Individual cash benefits
+                      ..._buildIndividualBenefits('Cash Benefits', cashBenefitDescriptions, 'cash_benefit_'),
+                      
+                      // Individual non-cash benefits
+                      ..._buildIndividualBenefits('Non-Cash Benefits', nonCashBenefitDescriptions, 'non_cash_benefit_'),
+                      
+                      if (salary.taxableNonCashBenefits > 0)
+                        _buildSlipRow('Taxable Non-Cash Benefits', formatCurrency(salary.taxableNonCashBenefits)),
+                      
+                      if (salary.overtimeAmount > 0)
+                        _buildSlipRow('Overtime', formatCurrency(salary.overtimeAmount)),
+                      
+                      if (salary.earnings > 0)
+                        _buildSlipRow('Other Earnings', formatCurrency(salary.earnings)),
+                    ]),
+                    
+                    _buildSlipSection('Deductions', [
+                      // Individual deductions
+                      ..._buildIndividualBenefits('Deductions', deductionDescriptions, 'deduction_'),
+                      
+                      _buildSlipRow('SHIF', formatCurrency(salary.shifDeduction)),
+                      _buildSlipRow('NSSF Tier I', formatCurrency(salary.nssfTierIDeduction)),
+                      _buildSlipRow('NSSF Tier II', formatCurrency(salary.nssfTierIIDeduction)),
+                      _buildSlipRow('Housing Levy', formatCurrency(salary.housingLevy)),
+                      _buildSlipRow('PAYE', formatCurrency(salary.payeDeduction)),
+                      
+                      if (salary.pensionContributions > 0)
+                        _buildSlipRow('Pension', formatCurrency(salary.pensionContributions)),
+                      
+                      if (salary.insuranceRelief > 0)
+                        _buildSlipRow('Insurance Relief', formatCurrency(salary.insuranceRelief)),
+                      
+                      if (salary.otherDeductions > 0)
+                        _buildSlipRow('Other Deductions', formatCurrency(salary.otherDeductions)),
+                    ]),
+                    
+                    _buildSlipSection('Summary', [
+                      _buildSlipRow('Taxable Income', formatCurrency(salary.taxableIncome)),
+                      _buildSlipRow('Total Deductions', formatCurrency(salary.totalDeductions)),
+                      _buildSlipRow('Net Pay', formatCurrency(salary.netPay), isTotal: true),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Close',
+                      style: TextStyle(color: subtitleColor),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => _printSalarySlip(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'Print',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlipSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Text(
+          title,
+          style: TextStyle(
+            color: primaryColor,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+        const SizedBox(height: 8),
+        Divider(color: Colors.grey[300]),
+      ],
+    );
+  }
+
+  Widget _buildSlipRow(String label, String value, {bool isHighlighted = false, bool isTotal = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: isHighlighted ? Colors.red : textColor,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              color: isHighlighted ? Colors.red : (isTotal ? primaryColor : textColor),
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              fontSize: isTotal ? 16 : 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildIndividualBenefits(String category, Set<String> descriptions, String prefix) {
+    final List<Widget> rows = [];
+    
+    for (var desc in descriptions) {
+      final key = '$prefix$desc';
+      final value = salary.additionalFields[key];
+      if (value is double && value > 0) {
+        rows.add(_buildSlipRow('$category: $desc', formatCurrency(value)));
+      }
+    }
+    
+    return rows;
+  }
+
+  Future<void> _printSalarySlip(BuildContext context) async {
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => _generatePdf(format),
+    );
+  }
+
+  Future<Uint8List> _generatePdf(PdfPageFormat format) async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: format,
+        build: (context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Header(
+                level: 0,
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Salary Slip',
+                        style: pw.TextStyle(
+                            fontSize: 24, fontWeight: pw.FontWeight.bold)),
+                    pw.Text(salary.companyName ?? '',
+                        style: const pw.TextStyle(fontSize: 18)),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text('Employee Name: ${salary.fullname}'),
+                      pw.Text('Employee ID: ${salary.employeeId}'),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text('Date: ${salary.formattedPaymentDate}'),
+                      pw.Text('Status: ${salary.status}'),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Divider(),
+              pw.Text('Earnings',
+                  style: pw.TextStyle(
+                      fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              _buildPdfRow('Gross Pay', salary.grossPay),
+              _buildPdfRow('Basic Pay', salary.basicPay),
+              _buildPdfRow('House Allowance', salary.houseAllowance),
+              if (salary.overtimeAmount > 0)
+                _buildPdfRow('Overtime', salary.overtimeAmount),
+              if (salary.earnings > 0)
+                _buildPdfRow('Other Earnings', salary.earnings),
+              if (salary.cashBenefits > 0)
+                _buildPdfRow('Cash Benefits', salary.cashBenefits),
+              if (salary.nonCashBenefits > 0)
+                _buildPdfRow('Non-Cash Benefits', salary.nonCashBenefits),
+              pw.SizedBox(height: 10),
+              pw.Text('Deductions',
+                  style: pw.TextStyle(
+                      fontSize: 14, fontWeight: pw.FontWeight.bold)),
+              _buildPdfRow('PAYE', salary.payeDeduction),
+              _buildPdfRow('SHIF', salary.shifDeduction),
+              _buildPdfRow('NSSF',
+                  salary.nssfTierIDeduction + salary.nssfTierIIDeduction),
+              _buildPdfRow('Housing Levy', salary.housingLevy),
+              if (salary.pensionContributions > 0)
+                _buildPdfRow('Pension', salary.pensionContributions),
+              if (salary.otherDeductions > 0)
+                _buildPdfRow('Other Deductions', salary.otherDeductions),
+              pw.Divider(),
+              _buildPdfRow('Total Deductions', salary.totalDeductions,
+                  isBold: true),
+              pw.SizedBox(height: 10),
+              _buildPdfRow('Net Pay', salary.netPay,
+                  isBold: true, fontSize: 16),
+            ],
+          );
+        },
+      ),
+    );
+    return pdf.save();
+  }
+
+  pw.Widget _buildPdfRow(String label, double value,
+      {bool isBold = false, double fontSize = 12}) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(label,
+            style: pw.TextStyle(
+                fontSize: fontSize,
+                fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal)),
+        pw.Text(formatCurrency(value),
+            style: pw.TextStyle(
+                fontSize: fontSize,
+                fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal)),
+      ],
     );
   }
 }
 
 extension StringExtension on String {
   String capitalize() {
-    return "${this[0].toUpperCase()}${substring(1)}";
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class RecaptchaScreen extends StatefulWidget {
-  const RecaptchaScreen({Key? key}) : super(key: key);
+  const RecaptchaScreen({super.key});
 
   @override
-  _RecaptchaScreenState createState() => _RecaptchaScreenState();
+  State<RecaptchaScreen> createState() => _RecaptchaScreenState();
 }
 
 class _RecaptchaScreenState extends State<RecaptchaScreen> {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class NotificationsSettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const NotificationsSettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _NotificationsSettingsScreenState createState() =>
+  State<NotificationsSettingsScreen> createState() =>
       _NotificationsSettingsScreenState();
 }
 
@@ -76,12 +77,12 @@ class _NotificationsSettingsScreenState
         throw Exception('User data is incomplete (missing ID or role)');
       }
 
-      final preferences = {
-        'user_id': widget.user['id'].toString(),
-        'enable_notifications': _enableNotifications,
-        'email_alerts': _emailAlerts,
-        'sms_alerts': _smsAlerts,
-      };
+      // final preferences = {
+      //   'user_id': widget.user['id'].toString(),
+      //   'enable_notifications': _enableNotifications,
+      //   'email_alerts': _emailAlerts,
+      //   'sms_alerts': _smsAlerts,
+      // };
 
      // await widget.apiService.updateNotificationPreferences(preferences);
 
@@ -109,7 +110,7 @@ class _NotificationsSettingsScreenState
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -130,6 +131,7 @@ class _NotificationsSettingsScreenState
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -144,7 +146,9 @@ class _NotificationsSettingsScreenState
         title: 'Notification Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -164,7 +168,7 @@ class _NotificationsSettingsScreenState
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],
@@ -239,7 +243,7 @@ class _NotificationsSettingsScreenState
                                     }
                                   });
                                 },
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),
                               ),
@@ -260,7 +264,7 @@ class _NotificationsSettingsScreenState
                                         });
                                       }
                                     : null,
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 inactiveTrackColor: Colors.grey[300],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),
@@ -282,7 +286,7 @@ class _NotificationsSettingsScreenState
                                         });
                                       }
                                     : null,
-                                activeColor: Colors.teal[700],
+                                activeTrackColor: Colors.teal[700],
                                 inactiveTrackColor: Colors.grey[300],
                                 contentPadding:
                                     const EdgeInsets.symmetric(horizontal: 0),

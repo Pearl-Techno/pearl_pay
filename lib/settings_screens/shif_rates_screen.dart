@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class SHIFRatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const SHIFRatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _SHIFRatesScreenState createState() => _SHIFRatesScreenState();
+  State<SHIFRatesScreen> createState() => _SHIFRatesScreenState();
 }
 
 class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
@@ -81,11 +82,11 @@ class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'shif_rate': double.parse(_shifRateController.text),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'shif_rate': double.parse(_shifRateController.text),
+      // };
 
      // await widget.apiService.updateSHIFRate(data);
 
@@ -113,7 +114,7 @@ class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -134,6 +135,7 @@ class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -148,7 +150,9 @@ class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
         title: 'SHIF Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -168,7 +172,7 @@ class _SHIFRatesScreenState extends State<SHIFRatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

@@ -13,6 +13,20 @@ import '../../models/user.dart';
 import '../../services/services.dart';
 import '../../widgets/custom_app_bar.dart';
 
+// Constants - Using same colors as PaidSalariesScreen
+class PensionConstants {
+  static const Color primaryColor = Color(0xFF0D47A1);
+  static const Color secondaryColor = Color(0xFF1976D2);
+  static const Color accentColor = Color(0xFF00B0FF);
+  static const Color successColor = Color(0xFF2E7D32);
+  static const Color backgroundColor = Color(0xFFF5F9FF);
+  static const Color cardColor = Color(0xFFFFFFFF);
+  static const Color textColor = Color(0xFF1A237E);
+  static const Color subtitleColor = Color(0xFF546E7A);
+  static const Color greyColor = Color(0xFF9E9E9E);
+  static const Color errorColor = Color(0xFFC62828);
+}
+
 class PensionScreen extends StatefulWidget {
   final ApiService apiService;
   final User user;
@@ -40,6 +54,10 @@ class _PensionScreenState extends State<PensionScreen> {
   DateTime? _selectedPaymentDate;
   String _sortColumn = 'fullname';
   bool _sortAscending = true;
+
+  // Statistics
+  double _totalPensionAmount = 0.0;
+  int _totalContributions = 0;
 
   @override
   void initState() {
@@ -69,7 +87,7 @@ class _PensionScreenState extends State<PensionScreen> {
                 .toList();
       });
     } catch (e) {
-      _showSnackBar('Failed to load companies: $e');
+      _showErrorSnackBar('Failed to load companies: $e');
     }
   }
 
@@ -77,6 +95,8 @@ class _PensionScreenState extends State<PensionScreen> {
     setState(() {
       _isLoading = true;
       _pensionRecords = [];
+      _totalPensionAmount = 0.0;
+      _totalContributions = 0;
     });
 
     try {
@@ -100,7 +120,7 @@ class _PensionScreenState extends State<PensionScreen> {
       }
 
       final companyId = widget.user.companyId;
-      if (companyId == null || companyId.toString().isEmpty || int.tryParse(companyId.toString()) == null || int.parse(companyId.toString()) <= 0) {
+      if (companyId <= 0) {
         throw Exception('Invalid company ID: ${widget.user.companyId}');
       }
 
@@ -155,6 +175,10 @@ class _PensionScreenState extends State<PensionScreen> {
         });
       }
 
+      // Update statistics
+      _totalPensionAmount = totalPensionContribution;
+      _totalContributions = totalContributionCount;
+
       _pensionRecords.add({
         'employee_id': null,
         'fullname': 'Totals',
@@ -170,8 +194,9 @@ class _PensionScreenState extends State<PensionScreen> {
       });
 
       _sortRecords();
+      _showSuccessSnackBar('Pension records loaded successfully');
     } catch (e) {
-      _showSnackBar('Failed to load pension records: $e');
+      _showErrorSnackBar('Failed to load pension records: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -199,7 +224,7 @@ class _PensionScreenState extends State<PensionScreen> {
   Future<void> _exportPensionReport() async {
     if (_pensionRecords.isEmpty ||
         _pensionRecords.last['fullname'] != 'Totals') {
-      _showSnackBar('Please fetch pension records first.');
+      _showErrorSnackBar('Please fetch pension records first.');
       return;
     }
 
@@ -241,11 +266,9 @@ class _PensionScreenState extends State<PensionScreen> {
 
       if (kIsWeb) {
         final blob = html.Blob([csvBytes]);
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
+        html.AnchorElement(href: html.Url.createObjectUrlFromBlob(blob))
           ..setAttribute('download', fileName)
           ..click();
-        html.Url.revokeObjectUrl(url);
       } else {
         final directory = await getDownloadsDirectory();
         if (directory == null) {
@@ -253,13 +276,12 @@ class _PensionScreenState extends State<PensionScreen> {
         }
         final file = File('${directory.path}/$fileName');
         await file.writeAsBytes(csvBytes);
-        _showSnackBar('CSV file saved to Downloads: ${file.path}');
+        _showSuccessSnackBar('CSV file saved to Downloads: ${file.path}');
       }
 
-      _showSnackBar('Pension report exported successfully',
-          backgroundColor: Colors.teal[700]);
+      _showSuccessSnackBar('Pension report exported successfully');
     } catch (e) {
-      _showSnackBar('Failed to export pension report: $e');
+      _showErrorSnackBar('Failed to export pension report: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -288,73 +310,78 @@ class _PensionScreenState extends State<PensionScreen> {
                 .toList();
 
     if (filteredEmployees.isEmpty) {
-      _showSnackBar('No employees available for the selected company.');
+      _showErrorSnackBar('No employees available for the selected company.');
       return;
     }
+
+    // Remove duplicate employees by employee_id
+    final uniqueEmployees = <String, Map<String, dynamic>>{};
+    for (final employee in filteredEmployees) {
+      final employeeId = employee['employee_id']?.toString();
+      if (employeeId != null && !uniqueEmployees.containsKey(employeeId)) {
+        uniqueEmployees[employeeId] = employee;
+      }
+    }
+    final uniqueEmployeeList = uniqueEmployees.values.toList();
 
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: PensionConstants.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Add Pension Contribution',
-            style: TextStyle(color: Colors.teal[900])),
+            style: TextStyle(
+              color: PensionConstants.textColor,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            )),
         content: SingleChildScrollView(
           child: Container(
+            width: MediaQuery.of(context).size.width * 0.8,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.white, Colors.teal[50]!],
+              gradient: const LinearGradient(
+                colors: [PensionConstants.cardColor, PensionConstants.backgroundColor],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
             ),
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16.0),
             child: Form(
               key: formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButtonFormField<String>(
-                    decoration: _buildInputDecoration('Employee'),
+                  // Employee Dropdown - Fixed to remove duplicates
+                  _buildEmployeeDropdown(
                     value: selectedEmployeeId,
-                    items: filteredEmployees
-                        .map((e) => DropdownMenuItem(
-                              value: e['employee_id'].toString(),
-                              child: Text(
-                                '${e['fullname']} (${e['employee_id']})',
-                                style: TextStyle(color: Colors.teal[900]),
-                              ),
-                            ))
-                        .toList(),
+                    employees: uniqueEmployeeList,
                     onChanged: (value) {
                       setState(() {
                         selectedEmployeeId = value;
-                        final employee = filteredEmployees.firstWhere(
-                          (e) => e['employee_id'].toString() == value,
-                          orElse: () => {},
-                        );
-                        if (employee.isNotEmpty) {
-                          final basicPay = double.tryParse(
-                                  employee['basic']?.toString() ?? '0.0') ??
-                              0.0;
-                          calculatedPension = basicPay * 0.025;
-                          pensionAmount = calculatedPension;
-                          selectedFullname = employee['fullname'] ?? 'Unknown';
-                          amountController.text =
-                              calculatedPension?.toStringAsFixed(2) ?? '';
+                        if (value != null) {
+                          final employee = uniqueEmployeeList.firstWhere(
+                            (e) => e['employee_id'].toString() == value,
+                            orElse: () => {},
+                          );
+                          if (employee.isNotEmpty) {
+                            final basicPay = double.tryParse(
+                                    employee['basic']?.toString() ?? '0.0') ??
+                                0.0;
+                            calculatedPension = basicPay * 0.025;
+                            pensionAmount = calculatedPension;
+                            selectedFullname = employee['fullname'] ?? 'Unknown';
+                            amountController.text =
+                                calculatedPension?.toStringAsFixed(2) ?? '';
+                          }
                         }
                       });
                     },
-                    validator: (value) =>
-                        value == null ? 'Please select an employee' : null,
-                    dropdownColor: Colors.white,
-                    icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
                   ),
                   const SizedBox(height: 16),
-                  TextFormField(
+                  _buildDialogTextField(
                     controller: amountController,
-                    decoration: _buildInputDecoration('Pension Amount'),
+                    label: 'Pension Amount *',
                     keyboardType: TextInputType.number,
                     onChanged: (value) {
                       pensionAmount = double.tryParse(value);
@@ -372,94 +399,91 @@ class _PensionScreenState extends State<PensionScreen> {
                   ),
                   if (calculatedPension != null) ...[
                     const SizedBox(height: 16),
-                    Text(
-                      'Calculated Pension: ${calculatedPension!.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: Colors.teal[900],
-                        fontWeight: FontWeight.bold,
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: PensionConstants.successColor.withAlpha(26),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: PensionConstants.successColor.withAlpha(77)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.calculate, color: PensionConstants.successColor, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Calculated Pension: ${calculatedPension!.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              color: PensionConstants.successColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                   const SizedBox(height: 16),
-                  TextFormField(
+                  _buildDatePickerField(
                     controller: dateController,
-                    readOnly: true,
-                    decoration: _buildInputDecoration('Payment Date').copyWith(
-                      suffixIcon: IconButton(
-                        icon:
-                            Icon(Icons.calendar_today, color: Colors.teal[700]),
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: paymentDate,
-                            firstDate: DateTime(2000),
-                            lastDate: DateTime(2100),
-                            builder: (context, child) => Theme(
-                              data: Theme.of(context).copyWith(
-                                colorScheme: ColorScheme.light(
-                                    primary: Colors.teal[700]!),
-                              ),
-                              child: child!,
+                    label: 'Payment Date *',
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: paymentDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        builder: (context, child) => Theme(
+                          data: Theme.of(context).copyWith(
+                            colorScheme: ColorScheme.light(primary: PensionConstants.primaryColor),
+                            textButtonTheme: TextButtonThemeData(
+                              style: TextButton.styleFrom(foregroundColor: PensionConstants.primaryColor),
                             ),
-                          );
-                          if (picked != null) {
-                            setState(() {
-                              paymentDate = picked;
-                              dateController.text =
-                                  DateFormat('yyyy-MM-dd').format(picked);
-                            });
-                          }
-                        },
-                      ),
-                    ),
+                          ),
+                          child: child!,
+                        ),
+                      );
+                      if (picked != null) {
+                        setState(() {
+                          paymentDate = picked;
+                          dateController.text =
+                              DateFormat('yyyy-MM-dd').format(picked);
+                        });
+                      }
+                    },
                     validator: (value) => value == null || value.isEmpty
                         ? 'Please select a date'
                         : null,
                   ),
                   const SizedBox(height: 16),
-                  DropdownButtonFormField<int>(
-                    decoration: _buildInputDecoration('Month'),
-                    value: dialogMonth,
-                    items: List.generate(
-                      12,
-                      (index) => DropdownMenuItem(
-                        value: index + 1,
-                        child: Text(
-                          DateFormat('MMMM')
-                              .format(DateTime(dialogYear, index + 1)),
-                          style: TextStyle(color: Colors.teal[900]),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildMonthYearDropdown(
+            label: 'Month',
+                          value: dialogMonth,
+                          items: List.generate(12, (index) => index + 1),
+                          itemBuilder: (month) => DateFormat('MMMM').format(DateTime(dialogYear, month)),
+                          onChanged: (value) {
+                            setState(() => dialogMonth = value!);
+                          },
+                          validator: (value) =>
+                              value == null ? 'Please select a month' : null,
                         ),
                       ),
-                    ),
-                    onChanged: (value) {
-                      setState(() => dialogMonth = value!);
-                    },
-                    validator: (value) =>
-                        value == null ? 'Please select a month' : null,
-                    dropdownColor: Colors.white,
-                    icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-                  ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<int>(
-                    decoration: _buildInputDecoration('Year'),
-                    value: dialogYear,
-                    items: List.generate(
-                      10,
-                      (index) => DropdownMenuItem(
-                        value: DateTime.now().year - index,
-                        child: Text(
-                          (DateTime.now().year - index).toString(),
-                          style: TextStyle(color: Colors.teal[900]),
+        SizedBox(width: 12),
+                      Expanded(
+                        child: _buildMonthYearDropdown(
+            label: 'Year',
+                          value: dialogYear,
+                          items: List.generate(10, (index) => DateTime.now().year - index),
+                          itemBuilder: (year) => year.toString(),
+                          onChanged: (value) {
+                            setState(() => dialogYear = value!);
+                          },
+                          validator: (value) =>
+                              value == null ? 'Please select a year' : null,
                         ),
                       ),
-                    ),
-                    onChanged: (value) {
-                      setState(() => dialogYear = value!);
-                    },
-                    validator: (value) =>
-                        value == null ? 'Please select a year' : null,
-                    dropdownColor: Colors.white,
-                    icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
+                    ],
                   ),
                 ],
               ),
@@ -469,7 +493,10 @@ class _PensionScreenState extends State<PensionScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.teal[700])),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: PensionConstants.subtitleColor),
+            ),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -485,7 +512,7 @@ class _PensionScreenState extends State<PensionScreen> {
 
                 try {
                   final companyId = widget.user.companyId;
-                  if (companyId == null || companyId.toString().isEmpty) {
+                  if (companyId <= 0) {
                     throw Exception(
                         'Invalid company ID: ${widget.user.companyId}');
                   }
@@ -493,21 +520,23 @@ class _PensionScreenState extends State<PensionScreen> {
                     pensionData,
                     companyId,
                   );
+                  if (!context.mounted) return;
                   Navigator.pop(context);
-                  _showSnackBar('Pension contribution added successfully',
-                      backgroundColor: Colors.teal[700]);
+                  _showSuccessSnackBar('Pension contribution added successfully');
                   await _fetchPensionRecords();
                 } catch (e) {
-                  _showSnackBar('Failed to add pension contribution: $e');
+                  _showErrorSnackBar('Failed to add pension contribution: $e');
                 }
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal[700],
+              backgroundColor: PensionConstants.primaryColor,
+              foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-            child: const Text('Save'),
+            child: const Text('Save Contribution'),
           ),
         ],
       ),
@@ -516,10 +545,7 @@ class _PensionScreenState extends State<PensionScreen> {
 
   Future<void> _showEmployeePensionDetails(String employeeId) async {
     try {
-      final companyId = int.tryParse(widget.user.companyId.toString());
-      if (companyId == null) {
-        throw Exception('Invalid company ID: ${widget.user.companyId}');
-      }
+      final companyId = widget.user.companyId;
 
       final contributions = await _apiService.fetchPensionContributions(
         employeeId,
@@ -534,282 +560,785 @@ class _PensionScreenState extends State<PensionScreen> {
             sum + (double.tryParse(c['amount']?.toString() ?? '0.0') ?? 0.0),
       );
 
+      if (!mounted) return;
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
+          backgroundColor: PensionConstants.cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text('Pension Details',
-              style: TextStyle(color: Colors.teal[900])),
-          content: Text(
-            'Total Pension Contribution for $employeeId: ${totalAmount.toStringAsFixed(2)}',
-            style: TextStyle(color: Colors.teal[900]),
+              style: TextStyle(
+                color: PensionConstants.textColor,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              )),
+          content: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: PensionConstants.backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.account_balance_wallet, size: 48, color: PensionConstants.primaryColor),
+                const SizedBox(height: 16),
+                Text(
+                  'Employee: $employeeId',
+                  style: TextStyle(
+                    color: PensionConstants.textColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Total Pension Contribution',
+                  style: TextStyle(
+                    color: PensionConstants.subtitleColor,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'KES ${totalAmount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: PensionConstants.successColor,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'For ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+                  style: TextStyle(
+                    color: PensionConstants.subtitleColor,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('Close', style: TextStyle(color: Colors.teal[700])),
+              child: Text(
+                'Close',
+                style: TextStyle(color: PensionConstants.subtitleColor),
+              ),
             ),
           ],
         ),
       );
     } catch (e) {
-      _showSnackBar('Failed to load pension details: $e');
+      _showErrorSnackBar('Failed to load pension details: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: PensionConstants.backgroundColor,
       appBar: CustomAppBar(
-        title: 'Manage Pension Contributions',
-        backgroundColor: Colors.teal[800],
+        title: 'Pension Management',
+        backgroundColor: PensionConstants.primaryColor,
         onNotificationTap: () => debugPrint('Notifications tapped'),
         onProfileTap: () => debugPrint('Profile tapped'),
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.teal[50]!, Colors.teal[100]!],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      body: Column(
+        children: [
+          // Header Section
+          _buildHeaderSection(),
+          
+          // Content Area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  const SizedBox(height: 16),
+                  _buildFiltersSection(),
+                  const SizedBox(height: 16),
+                  _buildStatisticsCards(),
+                  const SizedBox(height: 16),
+                  _buildContentSection(),
+                ],
+              ),
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [PensionConstants.primaryColor, PensionConstants.secondaryColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
-                  padding: const EdgeInsets.all(16.0),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.white, Colors.teal[50]!],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white.withAlpha(51),
+                    shape: BoxShape.circle,
                   ),
+                  child: Icon(
+                    Icons.account_balance_wallet,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildDropdown<int>(
-                              value: _selectedMonth,
-                              items: List.generate(12, (index) => index + 1),
-                              itemBuilder: (month) => DateFormat('MMMM')
-                                  .format(DateTime(_selectedYear, month)),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedMonth = value!;
-                                  _pensionRecords = [];
-                                  _searchKeyword = '';
-                                });
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildDropdown<int>(
-                              value: _selectedYear,
-                              items: List.generate(
-                                  10, (index) => DateTime.now().year - index),
-                              itemBuilder: (year) => year.toString(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedYear = value!;
-                                  _pensionRecords = [];
-                                  _searchKeyword = '';
-                                });
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildDropdown<String>(
-                              value: _selectedCompany ?? 'All Companies',
-                              items: _companyNames,
-                              itemBuilder: (company) => company,
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedCompany = value;
-                                  _pensionRecords = [];
-                                  _searchKeyword = '';
-                                });
-                              },
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Pension Management',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () async {
-                                final picked = await showDatePicker(
-                                  context: context,
-                                  initialDate:
-                                      _selectedPaymentDate ?? DateTime.now(),
-                                  firstDate: DateTime(2000),
-                                  lastDate: DateTime(2100),
-                                  builder: (context, child) => Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: ColorScheme.light(
-                                          primary: Colors.teal[700]!),
-                                    ),
-                                    child: child!,
-                                  ),
-                                );
-                                if (picked != null) {
-                                  setState(() {
-                                    _selectedPaymentDate = picked;
-                                  });
-                                }
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 14),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.teal[50]!),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      _selectedPaymentDate != null
-                                          ? DateFormat('yyyy-MM-dd')
-                                              .format(_selectedPaymentDate!)
-                                          : 'Select Payment Date',
-                                      style: TextStyle(color: Colors.teal[900]),
-                                    ),
-                                    Icon(Icons.calendar_today,
-                                        color: Colors.teal[700]),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed:
-                                  _isLoading ? null : _fetchPensionRecords,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.teal[700],
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                              ),
-                              child: _isLoading
-                                  ? const CircularProgressIndicator(
-                                      color: Colors.white)
-                                  : const Text('Fetch Pensions'),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 4),
+                      Text(
+                        'Manage employee pension contributions and reports',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(230),
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _buildDateFilters(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateFilters() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildFilterDropdown(
+            value: _selectedMonth,
+            items: List.generate(12, (index) => index + 1),
+            itemBuilder: (month) => DateFormat('MMMM').format(DateTime(_selectedYear, month)),
+            onChanged: (value) {
+              setState(() {
+                _selectedMonth = value!;
+                _pensionRecords = [];
+                _searchKeyword = '';
+              });
+            },
+            hint: 'Select Month',
+            icon: Icons.calendar_month,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildFilterDropdown(
+            value: _selectedYear,
+            items: List.generate(5, (index) => DateTime.now().year - index),
+            itemBuilder: (year) => year.toString(),
+            onChanged: (value) {
+              setState(() {
+                _selectedYear = value!;
+                _pensionRecords = [];
+                _searchKeyword = '';
+              });
+            },
+            hint: 'Select Year',
+            icon: Icons.event,
+          ),
+        ),
+        const SizedBox(width: 12),
+        _buildRefreshButton(),
+      ],
+    );
+  }
+
+  Widget _buildFilterDropdown<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+    required String hint,
+    required IconData icon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withAlpha(230),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButtonFormField<T>(
+        initialValue: value,
+        items: items
+            .map((item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    itemBuilder(item),
+                    style: TextStyle(
+                      color: PensionConstants.textColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Colors.transparent,
+          hintText: hint,
+          hintStyle: TextStyle(color: PensionConstants.subtitleColor),
+          prefixIcon: Icon(icon, color: PensionConstants.primaryColor),
+        ),
+        icon: Icon(Icons.arrow_drop_down, color: PensionConstants.primaryColor),
+        dropdownColor: PensionConstants.cardColor,
+        style: TextStyle(
+          color: PensionConstants.textColor,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRefreshButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: IconButton(
+        onPressed: _fetchPensionRecords,
+        icon: Icon(Icons.refresh, color: PensionConstants.primaryColor),
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.white,
+          padding: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltersSection() {
+    return Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: _buildFilterDropdown<String>(
+            value: _selectedCompany ?? 'All Companies',
+            items: _companyNames,
+            itemBuilder: (company) => company,
+            onChanged: (value) {
+              setState(() {
+                _selectedCompany = value;
+                _pensionRecords = [];
+                _searchKeyword = '';
+              });
+            },
+            hint: 'Select Company',
+            icon: Icons.business,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 3,
+          child: Container(
+            decoration: BoxDecoration(
+              color: PensionConstants.cardColor,
+              borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 8,
+            offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: TextField(
+              onChanged: (value) => setState(() => _searchKeyword = value.toLowerCase()),
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                hintText: 'Search employees...',
+                hintStyle: TextStyle(color: PensionConstants.subtitleColor),
+                prefixIcon: Icon(Icons.search, color: PensionConstants.subtitleColor),
+                border: InputBorder.none,
+                filled: true,
+                fillColor: Colors.transparent,
               ),
-              const SizedBox(height: 16),
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Container(
-                  padding: const EdgeInsets.all(8.0),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.white, Colors.teal[50]!],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: TextField(
-                    decoration: InputDecoration(
-                      labelText: 'Search by Full Name',
-                      prefixIcon: Icon(Icons.search, color: Colors.teal[700]),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                    ),
-                    onChanged: (value) {
-                      setState(() => _searchKeyword = value.toLowerCase());
-                    },
-                  ),
+              style: TextStyle(
+                color: PensionConstants.textColor,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          flex: 2,
+          child: Container(
+            decoration: BoxDecoration(
+              color: PensionConstants.cardColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0D000000),
+                  blurRadius: 8,
+            offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: ListTile(
+              leading: Icon(Icons.calendar_today, color: PensionConstants.primaryColor, size: 20),
+              title: Text(
+                _selectedPaymentDate != null
+                    ? DateFormat('MMM dd').format(_selectedPaymentDate!)
+                    : 'Select Date',
+                style: TextStyle(
+                  color: PensionConstants.textColor,
+                  fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: _isLoading
-                    ? Center(
-                        child:
-                            CircularProgressIndicator(color: Colors.teal[400]))
-                    : _pensionRecords.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No pension records available',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 14),
-                            ),
-                          )
-                        : SingleChildScrollView(
-                            scrollDirection: Axis.vertical,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: DataTable(
-                                columnSpacing: 0,
-                                dataRowMinHeight: 40.0,
-                                headingRowColor: MaterialStateProperty.all(Colors.teal[100]),
-                                sortColumnIndex: _getColumnIndex(_sortColumn),
-                                columns: _buildTableColumns(),
-                                rows: _buildFilteredTableRows(),
-                              ),
-                            ),
-                          ),
+              trailing: Icon(Icons.arrow_drop_down, color: PensionConstants.primaryColor),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: _selectedPaymentDate ?? DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  builder: (context, child) => Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: ColorScheme.light(primary: PensionConstants.primaryColor),
+                      textButtonTheme: TextButtonThemeData(
+                        style: TextButton.styleFrom(foregroundColor: PensionConstants.primaryColor),
+                      ),
+                    ),
+                    child: child!,
+                  ),
+                );
+                if (picked != null) {
+                  setState(() => _selectedPaymentDate = picked);
+                }
+              },
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatisticsCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildStatCard(
+            title: 'Total Pension',
+            value: 'KES ${_totalPensionAmount.toStringAsFixed(2)}',
+            icon: Icons.account_balance_wallet,
+            color: PensionConstants.successColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildStatCard(
+            title: 'Contributions',
+            value: _totalContributions.toString(),
+            icon: Icons.list_alt,
+            color: PensionConstants.accentColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildActionCard(
+            title: 'Export Report',
+            icon: Icons.download,
+            onTap: _exportPensionReport,
+            color: PensionConstants.primaryColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildActionCard(
+            title: 'Add Contribution',
+            icon: Icons.add,
+            onTap: _showAddPensionDialog,
+            color: PensionConstants.successColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: PensionConstants.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+                  color: Color(0x0D000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withAlpha(26),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: PensionConstants.subtitleColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: PensionConstants.textColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionCard({
+    required String title,
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: _isLoading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: PensionConstants.cardColor,
+          borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+            BoxShadow(
+                  color: Color(0x0D000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withAlpha(26),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _exportPensionReport,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal[700],
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: _isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Export Pension Report'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _showAddPensionDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal[700],
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                      ),
-                      child: const Text('Add Pension'),
-                    ),
-                  ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                color: PensionConstants.textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContentSection() {
+    return Expanded(
+      child: Container(
+        decoration: BoxDecoration(
+          color: PensionConstants.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0D000000),
+              blurRadius: 16,
+            offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: _buildContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isLoading) {
+      return _buildLoadingState();
+    }
+    
+    if (_pensionRecords.isEmpty) {
+      return _buildEmptyState();
+    }
+    
+    return Column(
+      children: [
+        _buildTableHeader(),
+        Expanded(child: _buildPensionTable()),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            color: PensionConstants.primaryColor,
+            strokeWidth: 2,
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Loading Pension Records...',
+            style: TextStyle(
+              color: PensionConstants.subtitleColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fetching data for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+            style: TextStyle(
+              color: PensionConstants.subtitleColor,
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.account_balance_wallet_outlined,
+              size: 80,
+              color: PensionConstants.greyColor.withAlpha(128),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No Pension Records Found',
+              style: TextStyle(
+                color: PensionConstants.textColor,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No pension records available for ${DateFormat('MMMM yyyy').format(DateTime(_selectedYear, _selectedMonth))}',
+              style: TextStyle(
+                color: PensionConstants.subtitleColor,
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pension records will appear here once contributions are added',
+              style: TextStyle(
+                color: PensionConstants.subtitleColor,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _fetchPensionRecords,
+              icon: Icon(Icons.refresh, size: 18),
+              label: Text('Refresh Data'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PensionConstants.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTableHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      decoration: BoxDecoration(
+        color: PensionConstants.backgroundColor,
+        border: Border(
+          bottom: BorderSide(color: PensionConstants.backgroundColor.withValues(alpha: 0.5)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.list_alt, color: PensionConstants.primaryColor, size: 20),
+          const SizedBox(width: 12),
+          Text(
+            'Pension Records',
+            style: TextStyle(
+              color: PensionConstants.textColor,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            '${_pensionRecords.where((r) => r['fullname'] != 'Totals').length} records',
+            style: TextStyle(
+              color: PensionConstants.subtitleColor,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPensionTable() {
+    final filteredRecords = _pensionRecords.where((record) {
+      if (record['fullname'] == 'Totals') return true;
+      final fullName = record['fullname']?.toString().toLowerCase() ?? '';
+      return fullName.contains(_searchKeyword);
+    }).toList();
+
+    return Scrollbar(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columnSpacing: 24,
+            dataRowMinHeight: 60,
+            dataRowMaxHeight: 60,
+            headingRowHeight: 56,
+            horizontalMargin: 24,
+            headingTextStyle: TextStyle(
+              color: PensionConstants.textColor,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+              letterSpacing: 0.5,
+            ),
+            dataTextStyle: TextStyle(
+              color: PensionConstants.textColor,
+              fontSize: 12,
+            ),
+            headingRowColor: WidgetStateProperty.all(PensionConstants.backgroundColor),
+            sortColumnIndex: _getColumnIndex(_sortColumn),
+            sortAscending: _sortAscending,
+            onSelectAll: (value) {},
+            columns: _buildTableColumns(),
+            rows: filteredRecords.map((record) {
+              final isTotal = record['fullname'] == 'Totals';
+              
+              return DataRow(
+                onSelectChanged: record['employee_id'] != null
+                    ? (selected) => _showEmployeePensionDetails(record['employee_id'] as String)
+                    : null,
+                color: isTotal
+                    ? WidgetStateProperty.all(PensionConstants.successColor.withAlpha(26))
+                    : null,
+                cells: [
+                  _buildDataCell(record['employee_id']?.toString() ?? '', isBold: isTotal),
+                  _buildDataCell(record['company_name']?.toString() ?? '', isBold: isTotal),
+                  _buildDataCell(record['fullname']?.toString() ?? 'Unknown', isBold: isTotal),
+                  _buildCurrencyCell(record['basic_pay'], isHighlighted: isTotal),
+                  _buildCurrencyCell(record['pension_contribution'], isHighlighted: isTotal),
+                  _buildDataCell(record['contribution_count']?.toString() ?? '0', isBold: isTotal),
+                  _buildDataCell(record['payment_date']?.toString() ?? '', isBold: isTotal),
+                  _buildDataCell(record['month']?.toString() ?? '', isBold: isTotal),
+                  _buildDataCell(record['year']?.toString() ?? '', isBold: isTotal),
                 ],
-              ),
-            ],
+              );
+            }).toList(),
           ),
         ),
       ),
@@ -835,8 +1364,8 @@ class _PensionScreenState extends State<PensionScreen> {
           column['label']!,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            color: Colors.teal[900],
-            fontSize: 14,
+            color: PensionConstants.textColor,
+            fontSize: 12,
           ),
         ),
         onSort: (index, ascending) {
@@ -850,46 +1379,39 @@ class _PensionScreenState extends State<PensionScreen> {
     }).toList();
   }
 
-  List<DataRow> _buildFilteredTableRows() {
-    final filteredRecords = _pensionRecords.where((record) {
-      if (record['fullname'] == 'Totals') return true;
-      final fullName = record['fullname']?.toString().toLowerCase() ?? '';
-      return fullName.contains(_searchKeyword);
-    }).toList();
+  DataCell _buildDataCell(String text, {bool isBold = false}) {
+    return DataCell(
+      Tooltip(
+        message: text,
+        child: Text(
+          text,
+          style: TextStyle(
+            color: PensionConstants.textColor,
+            fontSize: 12,
+            fontWeight: isBold ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
+  }
 
-    return filteredRecords.map((record) {
-      final cells = [
-        record['employee_id']?.toString() ?? '',
-        record['company_name']?.toString() ?? '',
-        record['fullname']?.toString() ?? 'Unknown',
-        (record['basic_pay'] as num?)?.toStringAsFixed(2) ?? '0.00',
-        (record['pension_contribution'] as num?)?.toStringAsFixed(2) ?? '0.00',
-        (record['contribution_count'] as int?)?.toString() ?? '0',
-        record['payment_date']?.toString() ?? '',
-        record['month']?.toString() ?? '',
-        (record['year'] as int?)?.toString() ?? '',
-      ];
-
-      return DataRow(
-        onSelectChanged: record['employee_id'] != null
-            ? (selected) =>
-                _showEmployeePensionDetails(record['employee_id'] as String)
-            : null,
-        cells: cells.map((value) {
-          return DataCell(
-            Text(
-              value,
-              style: TextStyle(
-                color: Colors.grey[800],
-                fontWeight: record['fullname'] == 'Totals'
-                    ? FontWeight.bold
-                    : FontWeight.normal,
-              ),
-            ),
-          );
-        }).toList(),
-      );
-    }).toList();
+  DataCell _buildCurrencyCell(dynamic amount, {bool isHighlighted = false}) {
+    final value = double.tryParse(amount?.toString() ?? '0.0') ?? 0.0;
+    final formattedValue = 'KES ${value.toStringAsFixed(2)}';
+    
+    return DataCell(
+      Tooltip(
+        message: formattedValue,
+        child: Text(
+          formattedValue,
+          style: TextStyle(
+            color: isHighlighted ? PensionConstants.successColor : PensionConstants.textColor,
+            fontSize: 12,
+            fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
+    );
   }
 
   int? _getColumnIndex(String columnKey) {
@@ -904,72 +1426,232 @@ class _PensionScreenState extends State<PensionScreen> {
       'month',
       'year',
     ];
-    return columns.indexOf(columnKey);
+    final index = columns.indexOf(columnKey);
+    return index >= 0 ? index : null;
   }
 
-  Widget _buildDropdown<T>({
-    required T value,
+  // Dialog Widgets - Fixed to handle duplicate employee IDs
+  Widget _buildEmployeeDropdown({
+    required String? value,
+    required List<Map<String, dynamic>> employees,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Employee *',
+          style: TextStyle(
+            color: PensionConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: PensionConstants.backgroundColor),
+          ),
+          child: DropdownButtonFormField<String>(
+            initialValue: value,
+            items: employees
+                .map((employee) => DropdownMenuItem(
+                      value: employee['employee_id'].toString(),
+                      child: Text(
+                        '${employee['fullname']} (${employee['employee_id']})',
+                        style: TextStyle(color: PensionConstants.textColor),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ))
+                .toList(),
+            onChanged: onChanged,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              suffixIcon: Icon(Icons.arrow_drop_down, color: PensionConstants.primaryColor),
+            ),
+            validator: (value) => value == null ? 'Please select an employee' : null,
+            dropdownColor: PensionConstants.cardColor,
+            style: TextStyle(color: PensionConstants.textColor),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMonthYearDropdown<T>({
+    required String label,
+    required T? value,
     required List<T> items,
     required String Function(T) itemBuilder,
     required ValueChanged<T?> onChanged,
+    required String? Function(T?)? validator,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
-                  ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: PensionConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: PensionConstants.backgroundColor),
+          ),
+          child: DropdownButtonFormField<T>(
+            initialValue: value,
+            items: items
+                .map((item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(
+                        itemBuilder(item),
+                        style: TextStyle(color: PensionConstants.textColor),
+                      ),
+                    ))
+                .toList(),
+            onChanged: onChanged,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              suffixIcon: Icon(Icons.arrow_drop_down, color: PensionConstants.primaryColor),
+            ),
+            validator: validator,
+            dropdownColor: PensionConstants.cardColor,
+            style: TextStyle(color: PensionConstants.textColor),
+          ),
+        ),
+      ],
     );
   }
 
-  InputDecoration _buildInputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: TextStyle(color: Colors.teal[900]),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: Colors.teal[200]!),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: Colors.teal[700]!),
-      ),
-      filled: true,
-      fillColor: Colors.white,
+  Widget _buildDialogTextField({
+    required TextEditingController controller,
+    required String label,
+    required TextInputType keyboardType,
+    required ValueChanged<String> onChanged,
+    required String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: PensionConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          onChanged: onChanged,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: PensionConstants.backgroundColor),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: PensionConstants.primaryColor),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          validator: validator,
+          style: TextStyle(color: PensionConstants.textColor),
+        ),
+      ],
     );
   }
 
-  void _showSnackBar(String message, {Color? backgroundColor}) {
+  Widget _buildDatePickerField({
+    required TextEditingController controller,
+    required String label,
+    required VoidCallback onTap,
+    required String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: PensionConstants.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: PensionConstants.backgroundColor),
+            ),
+            child: ListTile(
+              leading: Icon(Icons.calendar_today, color: PensionConstants.primaryColor),
+              title: Text(
+                controller.text.isEmpty ? 'Select Date' : controller.text,
+                style: TextStyle(
+                  color: controller.text.isEmpty ? PensionConstants.subtitleColor : PensionConstants.textColor,
+                ),
+              ),
+              trailing: Icon(Icons.arrow_drop_down, color: PensionConstants.primaryColor),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor ?? Colors.red[700],
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: PensionConstants.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
-}
 
-extension StringExtension on String {
-  String capitalize() {
-    if (isEmpty) return this;
-    return '${this[0].toUpperCase()}${substring(1)}';
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: PensionConstants.errorColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 }

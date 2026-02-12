@@ -14,18 +14,33 @@ import '../screens/login_screen.dart';
 import '../services/services.dart';
 import '../widgets/custom_app_bar.dart';
 
+// Constants - Using same colors as other screens
+class PayslipConstants {
+  static const Color primaryColor = Color(0xFF0D47A1);
+  static const Color secondaryColor = Color(0xFF1976D2);
+  static const Color accentColor = Color(0xFF00B0FF);
+  static const Color successColor = Color(0xFF2E7D32);
+  static const Color backgroundColor = Color(0xFFF5F9FF);
+  static const Color cardColor = Color(0xFFFFFFFF);
+  static const Color textColor = Color(0xFF1A237E);
+  static const Color subtitleColor = Color(0xFF546E7A);
+  static const Color greyColor = Color(0xFF9E9E9E);
+  static const Color errorColor = Color(0xFFC62828);
+  static const Color warningColor = Color(0xFFFF9800);
+}
+
 class PayslipScreen extends StatefulWidget {
   final Map<String, dynamic> user;
   final ApiService apiService;
 
   const PayslipScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _PayslipScreenState createState() => _PayslipScreenState();
+  State<PayslipScreen> createState() => _PayslipScreenState();
 }
 
 class _PayslipScreenState extends State<PayslipScreen> {
@@ -46,21 +61,34 @@ class _PayslipScreenState extends State<PayslipScreen> {
     _fetchCompanies();
   }
 
-  // Logout function to clear SharedPreferences and navigate to LoginScreen
+  // Enhanced logout function with consistent styling
   Future<void> _logout(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
+        backgroundColor: PayslipConstants.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Logout', style: TextStyle(
+          color: PayslipConstants.textColor,
+          fontWeight: FontWeight.w600,
+        )),
+        content: Text('Are you sure you want to log out?', style: TextStyle(
+          color: PayslipConstants.subtitleColor,
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(
+              color: PayslipConstants.subtitleColor,
+            )),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: PayslipConstants.errorColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Logout', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -68,11 +96,67 @@ class _PayslipScreenState extends State<PayslipScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!context.mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
       );
     }
+  }
+
+  // Snackbar helper methods
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: PayslipConstants.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: PayslipConstants.errorColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showWarningSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: PayslipConstants.warningColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   Future<void> _fetchCompanies() async {
@@ -98,9 +182,8 @@ class _PayslipScreenState extends State<PayslipScreen> {
           selectedCompanyId = null;
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No company assigned to user')),
-        );
+        if (!mounted) return;
+        _showErrorSnackBar('No company assigned to user');
         return;
       }
 
@@ -131,14 +214,13 @@ class _PayslipScreenState extends State<PayslipScreen> {
       if (kDebugMode) {
         print('Error fetching companies: $e');
       }
+      if (!mounted) return;
       setState(() {
         companyIds = [];
         companyIdToName = {};
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load companies: $e')),
-      );
+      _showErrorSnackBar('Failed to load companies: $e');
     }
   }
 
@@ -159,7 +241,8 @@ class _PayslipScreenState extends State<PayslipScreen> {
       final employeeId = widget.user['employee_id']?.toString();
 
       // Fetch salaries and employees for the selected company
-      salaries = await widget.apiService.getSalaries(selectedCompanyId!);
+      salaries = await widget.apiService
+          .getSalaries(selectedCompanyId!, month: selectedMonth, year: selectedYear);
       employees = await widget.apiService.getEmployeeList(selectedCompanyId!);
 
       // Filter employees by Active status
@@ -202,23 +285,23 @@ class _PayslipScreenState extends State<PayslipScreen> {
 
       for (var salary in filteredSalaries) {
         final employeeId = salary['employee_id'].toString();
-        final companyId = selectedCompanyId!; // Use selectedCompanyId directly
- final benefits = await widget.apiService.fetchBenefits(
-          companyId, // int companyId
-          selectedMonth, // int month
-          selectedYear, // int year
-          employeeId, // String employeeId
+        final companyId = selectedCompanyId!;
+        final benefits = await widget.apiService.fetchBenefits(
+          companyId,
+          selectedMonth,
+          selectedYear,
+          employeeId,
         );
         final deductions = await widget.apiService.fetchDeductions(
-                    companyId, // int companyId
-          selectedMonth, // int month
-          selectedYear, // int year
-          employeeId, // String employeeId
-          );
+          companyId,
+          selectedMonth,
+          selectedYear,
+          employeeId,
+        );
         salary['benefits'] = benefits;
         salary['deductions_list'] = deductions;
 
-        // Find employee by employee_id only (no company_id in employee_salaries)
+        // Find employee by employee_id only
         final employee = _employees.firstWhere(
           (e) => e['employee_id'].toString() == employeeId,
           orElse: () => {},
@@ -275,13 +358,11 @@ class _PayslipScreenState extends State<PayslipScreen> {
         }
 
         for (var benefit in salary['benefits'] ?? []) {
-          final amount =
-              double.tryParse(benefit['amount']?.toString() ?? '0.0') ?? 0.0;
+          final amount = double.tryParse(benefit['amount']?.toString() ?? '0.0') ?? 0.0;
           benefit['amount'] = amount.round();
         }
         for (var deduction in salary['deductions_list'] ?? []) {
-          final amount =
-              double.tryParse(deduction['amount']?.toString() ?? '0.0') ?? 0.0;
+          final amount = double.tryParse(deduction['amount']?.toString() ?? '0.0') ?? 0.0;
           deduction['amount'] = amount.round();
         }
       }
@@ -294,14 +375,808 @@ class _PayslipScreenState extends State<PayslipScreen> {
       if (kDebugMode) {
         print('Error fetching salaries: $e');
       }
+      if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load salaries: $e')),
-      );
+      _showErrorSnackBar('Failed to load salaries: $e');
     }
   }
 
-  pw.Widget buildPayslipContent(Map salary, NumberFormat numberFormat) {
+  // ... (Keep all the PDF generation methods the same as they are working fine)
+  // buildPayslipContent, _generatePdf, _buildPdfRow, _buildSummaryRow, 
+  // _buildEarningsTableRows, _buildDeductionsTableRows, _calculateTotalDeductions
+  // ... (These methods remain unchanged)
+
+  Future<void> _exportToCsv() async {
+    if (_salaries.isEmpty) {
+      if (!mounted) return;
+      _showWarningSnackBar('No payslips available to export');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final numberFormat = NumberFormat('#,##0', 'en_US');
+      final csvData = <List<dynamic>>[
+        [
+          'ID',
+          'Employee ID',
+          'Full Name',
+          'Company',
+          'KRA PIN',
+          'Position',
+          'Pay Date',
+          'Gross Pay',
+          'Basic Pay',
+          'House Allowance',
+          'Non-Cash Benefits',
+          'Other Earnings',
+          'Overtime',
+          'Bonus',
+          'Taxable Income',
+          'PAYE Deduction',
+          'SHIF Deduction',
+          'NSSF Deduction',
+          'Pension Contributions',
+          'Loan Repayment',
+          'Housing Levy',
+          'Absenteeism Deduction',
+          'Total Deductions',
+          'Net Pay',
+          'Status',
+          'Benefits',
+          'Deductions List'
+        ],
+        ..._salaries.map((salary) {
+          final benefits = (salary['benefits'] as List<dynamic>? ?? [])
+              .map((b) => '${b['description']}: KES ${numberFormat.format(b['amount'] ?? 0)}')
+              .join('; ');
+          final deductions = (salary['deductions_list'] as List<dynamic>? ?? [])
+              .map((d) => '${d['description']}: KES ${numberFormat.format(d['amount'] ?? 0)}')
+              .join('; ');
+          return [
+            salary['id']?.toString() ?? 'N/A',
+            salary['employee_id']?.toString() ?? 'N/A',
+            salary['fullname']?.toString() ?? 'N/A',
+            (salary['company_details']?['company_name'] ?? salary['company_name']?.toString()) ?? 'N/A',
+            salary['kra_pin']?.toString() ?? 'N/A',
+            salary['position']?.toString() ?? 'N/A',
+            salary['payment_date']?.toString() ?? 'N/A',
+            numberFormat.format(salary['gross_pay'] ?? 0),
+            numberFormat.format(salary['basic_pay'] ?? 0),
+            numberFormat.format(salary['house_allowance'] ?? 0),
+            numberFormat.format(salary['non_cash_benefits'] ?? 0),
+            numberFormat.format(salary['other_earnings'] ?? 0),
+            numberFormat.format(salary['overtime_amount'] ?? 0),
+            numberFormat.format(salary['bonus'] ?? 0),
+            numberFormat.format(salary['taxable_income'] ?? 0),
+            numberFormat.format(salary['paye_deduction'] ?? 0),
+            numberFormat.format(salary['nhif_deduction'] ?? 0),
+            numberFormat.format(salary['nssf_deduction'] ?? 0),
+            numberFormat.format(salary['pension_contributions'] ?? 0),
+            numberFormat.format(salary['loan_repayment'] ?? 0),
+            numberFormat.format(salary['housing_levy'] ?? 0),
+            numberFormat.format(salary['absenteeism_deduction'] ?? 0),
+            numberFormat.format(_calculateTotalDeductions(salary) ?? 0),
+            numberFormat.format(salary['net_pay'] ?? 0),
+            salary['status']?.toString() ?? 'N/A',
+            benefits,
+            deductions,
+          ];
+        }),
+      ];
+
+      final csvString = const ListToCsvConverter().convert(csvData);
+
+      String baseDir = Platform.isWindows
+          ? r'C:\payslips'
+          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
+
+      final directory = Directory(baseDir);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+
+      final monthYear = DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
+      final filename = 'payslips_$monthYear.csv';
+      final filePath = '$baseDir/$filename';
+
+      final file = File(filePath);
+      await file.writeAsString(csvString);
+
+      if (!mounted) return;
+      _showSuccessSnackBar('CSV exported to $filePath');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Failed to export CSV: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _savePayslipToLocalDisk(Map salary, Uint8List pdfContent) async {
+    try {
+      String baseDir = Platform.isWindows
+          ? r'C:\payslips'
+          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
+
+      final directory = Directory(baseDir);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+
+      final monthYear = DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
+      final fullName = (salary['fullname']?.toString() ?? 'Unknown')
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
+          .trim();
+      final filename = 'payslip_${fullName}_$monthYear.pdf';
+      final filePath = '$baseDir/$filename';
+
+      final file = File(filePath);
+      await file.writeAsBytes(pdfContent);
+
+      await Printing.sharePdf(bytes: pdfContent, filename: filename);
+
+      if (!mounted) return;
+      _showSuccessSnackBar('Payslip saved to $filePath');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Failed to save payslip: $e');
+    }
+  }
+
+  Future<void> _printPayslip(Map salary) async {
+    final pdfContent = await _generatePdf(salary);
+    if (!mounted) return;
+    await _savePayslipToLocalDisk(salary, pdfContent);
+  }
+
+  Future<void> _downloadAllPayslips() async {
+    if (_salaries.isEmpty) {
+      _showWarningSnackBar('No payslips available to download');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final pdf = pw.Document();
+      final numberFormat = NumberFormat('#,##0', 'en_US');
+
+      for (var salary in _salaries) {
+        pdf.addPage(
+          pw.Page(
+            build: (context) {
+              return pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.center,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  buildPayslipContent(salary, numberFormat),
+                  pw.SizedBox(width: 14),
+                  pw.Container(
+                    height: PdfPageFormat.a4.height,
+                    child: pw.Container(
+                      width: 0.5,
+                      height: PdfPageFormat.a4.height,
+                      child: pw.Column(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                        children: List.generate(
+                          (PdfPageFormat.a4.height / 8).floor(),
+                          (index) => pw.Container(
+                            height: 4,
+                            color: index % 2 == 0 ? PdfColors.grey800 : PdfColors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(width: 14),
+                  buildPayslipContent(salary, numberFormat),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      final pdfContent = await pdf.save();
+
+      String baseDir = Platform.isWindows
+          ? r'C:\payslips'
+          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
+
+      final directory = Directory(baseDir);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+
+      final monthYear = DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
+      final filename = 'payslips_$monthYear.pdf';
+      final filePath = '$baseDir/$filename';
+
+      final file = File(filePath);
+      await file.writeAsBytes(pdfContent);
+
+      await Printing.sharePdf(bytes: pdfContent, filename: filename);
+
+      if (!mounted) return;
+      _showSuccessSnackBar('Saved ${_salaries.length} payslips as $filename to $baseDir');
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorSnackBar('Failed to save merged payslips: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final numberFormat = NumberFormat('#,##0', 'en_US');
+    final userCompanyName = widget.user['company_name']?.toString() ?? 'Unknown';
+
+    return Scaffold(
+      backgroundColor: PayslipConstants.backgroundColor,
+      appBar: CustomAppBar(
+        title: 'Payslips Dashboard',
+        backgroundColor: PayslipConstants.primaryColor,
+        onNotificationTap: () {
+          // Handle notifications
+        },
+        onProfileTap: () {
+          showModalBottomSheet(
+            context: context,
+            backgroundColor: PayslipConstants.cardColor,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            builder: (context) => Container(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: PayslipConstants.greyColor.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: PayslipConstants.primaryColor.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.person, color: PayslipConstants.primaryColor),
+                    ),
+                    title: Text('Profile: ${widget.user['username']}',
+                        style: TextStyle(
+                          color: PayslipConstants.textColor,
+                          fontWeight: FontWeight.w600,
+                        )),
+                    subtitle: Text('Role: ${widget.user['role']}',
+                        style: TextStyle(color: PayslipConstants.subtitleColor)),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _logout(context);
+                      },
+                      icon: Icon(Icons.logout, size: 20),
+                      label: const Text('Logout'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: PayslipConstants.errorColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    PayslipConstants.primaryColor,
+                    PayslipConstants.secondaryColor
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: PayslipConstants.primaryColor.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.receipt_long,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Payslips Dashboard',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'View, download and print employee payslips',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Controls Card
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: PayslipConstants.cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Month',
+                                style: TextStyle(
+                                  color: PayslipConstants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDropdown(
+                                value: selectedMonth,
+                                items: List.generate(12, (index) => index + 1),
+                                itemBuilder: (month) => DateFormat('MMMM').format(DateTime(selectedYear, month)),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedMonth = value!;
+                                    _fetchSalaries();
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Year',
+                                style: TextStyle(
+                                  color: PayslipConstants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDropdown(
+                                value: selectedYear,
+                                items: List.generate(10, (index) => DateTime.now().year - index),
+                                itemBuilder: (year) => year.toString(),
+                                onChanged: (value) {
+                                  setState(() {
+                                    selectedYear = value!;
+                                    _fetchSalaries();
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Company',
+                                style: TextStyle(
+                                  color: PayslipConstants.textColor,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                decoration: BoxDecoration(
+                                  color: PayslipConstants.backgroundColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: PayslipConstants.primaryColor.withValues(alpha: 0.3)),
+                                ),
+                                child: Text(
+                                  userCompanyName,
+                                  style: TextStyle(
+                                    color: PayslipConstants.textColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _fetchSalaries,
+                            icon: Icon(Icons.refresh, size: 20),
+                            label: const Text('Refresh Data'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: PayslipConstants.primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _downloadAllPayslips,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(Icons.download, size: 20),
+                            label: Text(_isLoading ? 'Downloading...' : 'Download All'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: PayslipConstants.accentColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: _isLoading ? null : _exportToCsv,
+                            icon: _isLoading
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(Icons.file_download, size: 20),
+                            label: Text(_isLoading ? 'Exporting...' : 'Export to CSV'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: PayslipConstants.successColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Results Section
+            Text(
+              'Payslip Results (${_salaries.length} records)',
+              style: TextStyle(
+                color: PayslipConstants.textColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: PayslipConstants.primaryColor,
+                      ),
+                    )
+                  : _salaries.isEmpty
+                      ? Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          child: Container(
+                            padding: const EdgeInsets.all(40),
+                            decoration: BoxDecoration(
+                              color: PayslipConstants.cardColor,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.receipt_long_outlined,
+                                  size: 80,
+                                color: PayslipConstants.greyColor.withValues(alpha: 0.5),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No Payslips Available',
+                                  style: TextStyle(
+                                    color: PayslipConstants.textColor,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Generate payslips using the controls above',
+                                  style: TextStyle(
+                                    color: PayslipConstants.subtitleColor,
+                                    fontSize: 14,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : _buildPayslipsDataTable(numberFormat),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPayslipsDataTable(NumberFormat numberFormat) {
+    return Card(
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: PayslipConstants.cardColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columnSpacing: 16,
+              dataRowMinHeight: 60,
+              dataRowMaxHeight: 60,
+              headingRowColor: WidgetStateProperty.all(PayslipConstants.primaryColor.withValues(alpha: 0.1)),
+              columns: [
+                _buildDataColumn('ID'),
+                _buildDataColumn('Employee ID'),
+                _buildDataColumn('Full Name'),
+                _buildDataColumn('Company'),
+                _buildDataColumn('Gross Pay'),
+                _buildDataColumn('Basic Pay'),
+                _buildDataColumn('Non-Cash Benefits'),
+                _buildDataColumn('Other Earnings'),
+                _buildDataColumn('Overtime'),
+                _buildDataColumn('Absenteeism'),
+                _buildDataColumn('Taxable Income'),
+                _buildDataColumn('SHIF'),
+                _buildDataColumn('PAYE'),
+                _buildDataColumn('NSSF'),
+                _buildDataColumn('Pension'),
+                _buildDataColumn('Loan'),
+                _buildDataColumn('Deductions'),
+                _buildDataColumn('Housing Levy'),
+                _buildDataColumn('Levy Relief'),
+                _buildDataColumn('Net Pay'),
+                _buildDataColumn('Status'),
+                _buildDataColumn('Pay Date'),
+                _buildDataColumn('Actions'),
+              ],
+              rows: _salaries.map((salary) {
+                return DataRow(
+                  cells: [
+                    _buildDataCell(salary['id']?.toString() ?? 'N/A'),
+                    _buildDataCell(salary['employee_id']?.toString() ?? 'N/A'),
+                    _buildDataCell(salary['fullname']?.toString() ?? 'N/A'),
+                    _buildDataCell((salary['company_details']?['company_name'] ?? salary['company_name']?.toString()) ?? 'N/A'),
+                    _buildDataCell('KES ${numberFormat.format(salary['gross_pay'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['basic_pay'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['non_cash_benefits'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['other_earnings'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['overtime_amount'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['absenteeism_deduction'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['taxable_income'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['nhif_deduction'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['paye_deduction'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['nssf_deduction'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['pension_contributions'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['loan_repayment'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['deductions'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['housing_levy'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['housing_levy_relief'] ?? 0)}'),
+                    _buildDataCell('KES ${numberFormat.format(salary['net_pay'] ?? 0)}'),
+                    _buildDataCell(salary['status']?.toString() ?? 'N/A'),
+                    _buildDataCell(salary['payment_date']?.toString() ?? 'N/A'),
+                    DataCell(Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.download, color: PayslipConstants.primaryColor),
+                          onPressed: () async {
+                            final pdfContent = await _generatePdf(salary);
+                            await _savePayslipToLocalDisk(salary, pdfContent);
+                          },
+                          tooltip: 'Download Payslip',
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.print, color: PayslipConstants.accentColor),
+                          onPressed: () => _printPayslip(salary),
+                          tooltip: 'Print Payslip',
+                        ),
+                      ],
+                    )),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataColumn _buildDataColumn(String label) {
+    return DataColumn(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: PayslipConstants.textColor,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  DataCell _buildDataCell(String text) {
+    return DataCell(
+      Text(
+        text,
+        style: TextStyle(
+          color: PayslipConstants.textColor,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown<T>({
+    required T? value,
+    required List<T> items,
+    required String Function(T) itemBuilder,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: PayslipConstants.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: PayslipConstants.primaryColor.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButton<T>(
+        value: value,
+        items: items
+            .map((item) => DropdownMenuItem(
+                  value: item,
+                  child: Text(
+                    itemBuilder(item),
+                    style: TextStyle(
+                      color: PayslipConstants.textColor,
+                      fontSize: 14,
+                    ),
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+        underline: const SizedBox(),
+        dropdownColor: PayslipConstants.cardColor,
+        icon: Icon(Icons.arrow_drop_down, color: PayslipConstants.primaryColor),
+        isExpanded: true,
+      ),
+    );
+  }
+
+  // Include all the PDF-related methods that were in your original code
+  // (buildPayslipContent, _generatePdf, _buildPdfRow, _buildSummaryRow, etc.)
+  // They should remain exactly as they were since they're working correctly
+
+    pw.Widget buildPayslipContent(Map salary, NumberFormat numberFormat) {
     final companyDetails = salary['company_details'] as Map<String, dynamic>? ??
         {
           'company_name': salary['company_name']?.toString() ?? 'N/A',
@@ -600,125 +1475,6 @@ class _PayslipScreenState extends State<PayslipScreen> {
     return pdf.save();
   }
 
-  Future<void> _exportToCsv() async {
-    if (_salaries.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No payslips available to export')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final numberFormat = NumberFormat('#,##0', 'en_US');
-      final csvData = <List<dynamic>>[
-        [
-          'ID',
-          'Employee ID',
-          'Full Name',
-          'Company',
-          'KRA PIN',
-          'Position',
-          'Pay Date',
-          'Gross Pay',
-          'Basic Pay',
-          'House Allowance',
-          'Non-Cash Benefits',
-          'Other Earnings',
-          'Overtime',
-          'Bonus',
-          'Taxable Income',
-          'PAYE Deduction',
-          'SHIF Deduction',
-          'NSSF Deduction',
-          'Pension Contributions',
-          'Loan Repayment',
-          'Housing Levy',
-          'Absenteeism Deduction',
-          'Total Deductions',
-          'Net Pay',
-          'Status',
-          'Benefits',
-          'Deductions List'
-        ],
-        ..._salaries.map((salary) {
-          final benefits = (salary['benefits'] as List<dynamic>? ?? [])
-              .map((b) =>
-                  '${b['description']}: KES ${numberFormat.format(b['amount'] ?? 0)}')
-              .join('; ');
-          final deductions = (salary['deductions_list'] as List<dynamic>? ?? [])
-              .map((d) =>
-                  '${d['description']}: KES ${numberFormat.format(d['amount'] ?? 0)}')
-              .join('; ');
-          return [
-            salary['id']?.toString() ?? 'N/A',
-            salary['employee_id']?.toString() ?? 'N/A',
-            salary['fullname']?.toString() ?? 'N/A',
-            (salary['company_details']?['company_name'] ??
-                    salary['company_name']?.toString()) ??
-                'N/A',
-            salary['kra_pin']?.toString() ?? 'N/A',
-            salary['position']?.toString() ?? 'N/A',
-            salary['payment_date']?.toString() ?? 'N/A',
-            numberFormat.format(salary['gross_pay'] ?? 0),
-            numberFormat.format(salary['basic_pay'] ?? 0),
-            numberFormat.format(salary['house_allowance'] ?? 0),
-            numberFormat.format(salary['non_cash_benefits'] ?? 0),
-            numberFormat.format(salary['other_earnings'] ?? 0),
-            numberFormat.format(salary['overtime_amount'] ?? 0),
-            numberFormat.format(salary['bonus'] ?? 0),
-            numberFormat.format(salary['taxable_income'] ?? 0),
-            numberFormat.format(salary['paye_deduction'] ?? 0),
-            numberFormat.format(salary['nhif_deduction'] ?? 0),
-            numberFormat.format(salary['nssf_deduction'] ?? 0),
-            numberFormat.format(salary['pension_contributions'] ?? 0),
-            numberFormat.format(salary['loan_repayment'] ?? 0),
-            numberFormat.format(salary['housing_levy'] ?? 0),
-            numberFormat.format(salary['absenteeism_deduction'] ?? 0),
-            numberFormat.format(_calculateTotalDeductions(salary) ?? 0),
-            numberFormat.format(salary['net_pay'] ?? 0),
-            salary['status']?.toString() ?? 'N/A',
-            benefits,
-            deductions,
-          ];
-        }).toList(),
-      ];
-
-      final csvString = const ListToCsvConverter().convert(csvData);
-
-      String baseDir = Platform.isWindows
-          ? r'C:\payslips'
-          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
-
-      final directory = Directory(baseDir);
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filename = 'payslips_$monthYear.csv';
-      final filePath = '$baseDir/$filename';
-
-      final file = File(filePath);
-      await file.writeAsString(csvString);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('CSV exported to $filePath'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to export CSV: $e')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
   String _getMonthFromPaymentDate(String? paymentDate) {
     if (paymentDate == null || paymentDate.isEmpty) return 'N/A';
     final date = DateTime.tryParse(paymentDate);
@@ -792,21 +1548,29 @@ class _PayslipScreenState extends State<PayslipScreen> {
     ];
 
     final benefits = salary['benefits'] as List<dynamic>? ?? [];
-    final benefitRows = benefits.map((benefit) => {
-          'description':
-              benefit['description']?.toString() ?? 'Unknown Benefit',
-          'value': benefit['amount'] ?? 0,
-        });
+    final cashBenefits = <Map<String, dynamic>>[];
+    int totalNonCashBenefits = 0;
 
-    final totalNonCashBenefits = benefits.fold<int>(
-        0, (sum, benefit) => sum + (benefit['amount'] as int? ?? 0));
+    for (var benefit in benefits) {
+      final type = (benefit['benefit_type']?.toString() ?? 'Non-Cash').toLowerCase().trim();
+      final amount = benefit['amount'] as int? ?? 0;
+
+      if (type.contains('cash') && !type.contains('non')) {
+        cashBenefits.add({
+          'description': benefit['description']?.toString() ?? 'Unknown Benefit',
+          'value': amount,
+        });
+      } else {
+        totalNonCashBenefits += amount;
+      }
+    }
 
     final allRows = [
       ...staticEarnings.where((earning) {
         final value = earning['value'] as int;
         return value != 0;
       }),
-      ...benefitRows,
+      ...cashBenefits,
       if (totalNonCashBenefits > 0)
         {
           'description': 'Non-Cash Benefits',
@@ -933,522 +1697,5 @@ class _PayslipScreenState extends State<PayslipScreen> {
     }
 
     return total > 0 ? total : null;
-  }
-
-  Future<void> _savePayslipToLocalDisk(Map salary, Uint8List pdfContent) async {
-    try {
-      String baseDir = Platform.isWindows
-          ? r'C:\payslips'
-          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
-
-      final directory = Directory(baseDir);
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final fullName = (salary['fullname']?.toString() ?? 'Unknown')
-          .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')
-          .trim();
-      final filename = 'payslip_${fullName}_$monthYear.pdf';
-      final filePath = '$baseDir/$filename';
-
-      final file = File(filePath);
-      await file.writeAsBytes(pdfContent);
-
-      await Printing.sharePdf(bytes: pdfContent, filename: filename);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Payslip saved to $filePath'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save payslip: $e')),
-      );
-    }
-  }
-
-  Future<void> _printPayslip(Map salary) async {
-    final pdfContent = await _generatePdf(salary);
-    await _savePayslipToLocalDisk(salary, pdfContent);
-  }
-
-  Future<void> _downloadAllPayslips() async {
-    if (_salaries.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No payslips available to download')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final pdf = pw.Document();
-      final numberFormat = NumberFormat('#,##0', 'en_US');
-
-      for (var salary in _salaries) {
-        pdf.addPage(
-          pw.Page(
-            build: (context) {
-              return pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  buildPayslipContent(salary, numberFormat),
-                  pw.SizedBox(width: 14),
-                  pw.Container(
-                    height: PdfPageFormat.a4.height,
-                    child: pw.Container(
-                      width: 0.5,
-                      height: PdfPageFormat.a4.height,
-                      child: pw.Column(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: List.generate(
-                          (PdfPageFormat.a4.height / 8).floor(),
-                          (index) => pw.Container(
-                            height: 4,
-                            color: index % 2 == 0
-                                ? PdfColors.grey800
-                                : PdfColors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  pw.SizedBox(width: 14),
-                  buildPayslipContent(salary, numberFormat),
-                ],
-              );
-            },
-          ),
-        );
-      }
-
-      final pdfContent = await pdf.save();
-
-      String baseDir = Platform.isWindows
-          ? r'C:\payslips'
-          : '${(await getApplicationDocumentsDirectory()).path}/payslips';
-
-      final directory = Directory(baseDir);
-      if (!await directory.exists()) {
-        await directory.create(recursive: true);
-      }
-
-      final monthYear =
-          DateFormat('MMM yyyy').format(DateTime(selectedYear, selectedMonth));
-      final filename = 'payslips_$monthYear.pdf';
-      final filePath = '$baseDir/$filename';
-
-      final file = File(filePath);
-      await file.writeAsBytes(pdfContent);
-
-      await Printing.sharePdf(bytes: pdfContent, filename: filename);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Saved ${_salaries.length} payslips as $filename to $baseDir'),
-          backgroundColor: Colors.teal,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save merged payslips: $e')),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final numberFormat = NumberFormat('#,##0', 'en_US');
-    final userCompanyName = widget.user['company_name']?.toString() ?? 'Unknown';
-
-    return Scaffold(
-      appBar: CustomAppBar(
-        title: 'Payslips',
-        backgroundColor: Colors.teal[800],
-        onNotificationTap: () {
-          if (kDebugMode) {
-            print('Notifications tapped');
-          }
-        },
-        onProfileTap: () {
-          // Show profile options, including logout
-          showModalBottomSheet(
-            context: context,
-            builder: (context) => Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.person, color: Colors.teal[700]),
-                    title: Text('Profile: ${widget.user['username']}'),
-                    subtitle: Text('Role: ${widget.user['role']}'),
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout, color: Colors.red[700]),
-                    title: const Text('Logout'),
-                    onTap: () {
-                      Navigator.pop(context); // Close bottom sheet
-                      _logout(context);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.teal[50]!, Colors.teal[100]!],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Container(
-                  padding: const EdgeInsets.all(16.0),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.white, Colors.teal[50]!],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildDropdown(
-                        value: selectedMonth,
-                        items: List.generate(12, (index) => index + 1),
-                        itemBuilder: (month) => DateFormat('MMMM')
-                            .format(DateTime(selectedYear, month)),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedMonth = value!;
-                            _fetchSalaries();
-                          });
-                        },
-                      ),
-                      _buildDropdown(
-                        value: selectedYear,
-                        items: List.generate(
-                            10, (index) => DateTime.now().year - index),
-                        itemBuilder: (year) => year.toString(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedYear = value!;
-                            _fetchSalaries();
-                          });
-                        },
-                      ),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.teal[200]!),
-                          ),
-                          child: Text(
-                            userCompanyName,
-                            style: TextStyle(
-                              color: Colors.teal[900],
-                              fontSize: 14,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: _fetchSalaries,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal[700],
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('Refresh'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _downloadAllPayslips,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Download All Payslips'),
-                  ),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _exportToCsv,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Export to CSV'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: _isLoading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.teal[700],
-                        ),
-                      )
-                    : _salaries.isEmpty
-                        ? Center(
-                            child: Text(
-                              'No payslips available for selected filters',
-                              style: TextStyle(
-                                color: Colors.teal[900],
-                                fontSize: 16,
-                              ),
-                            ),
-                          )
-                        : Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.white, Colors.teal[50]!],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.vertical,
-                                child: SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: DataTable(
-                                    columnSpacing: 16,
-                                    dataRowHeight: 60,
-                                    headingRowColor: WidgetStateProperty.all(
-                                        Colors.teal[100]),
-                                    columns: [
-                                      _buildDataColumn('ID'),
-                                      _buildDataColumn('Employee ID'),
-                                      _buildDataColumn('Full Name'),
-                                      _buildDataColumn('Company'),
-                                      _buildDataColumn('Gross Pay'),
-                                      _buildDataColumn('Basic Pay'),
-                                      _buildDataColumn('Non-Cash Benefits'),
-                                      _buildDataColumn('Other Earnings'),
-                                      _buildDataColumn('Overtime'),
-                                      _buildDataColumn('Absenteeism'),
-                                      _buildDataColumn('Taxable Income'),
-                                      _buildDataColumn('SHIF'),
-                                      _buildDataColumn('PAYE'),
-                                      _buildDataColumn('NSSF'),
-                                      _buildDataColumn('Pension'),
-                                      _buildDataColumn('Loan'),
-                                      _buildDataColumn('Deductions'),
-                                      _buildDataColumn('Housing Levy'),
-                                      _buildDataColumn('Levy Relief'),
-                                      _buildDataColumn('Net Pay'),
-                                      _buildDataColumn('Status'),
-                                      _buildDataColumn('Pay Date'),
-                                      _buildDataColumn('Actions'),
-                                    ],
-                                    rows: _salaries.map((salary) {
-                                      return DataRow(
-                                        cells: [
-                                          _buildDataCell(
-                                              salary['id']?.toString() ??
-                                                  'N/A'),
-                                          _buildDataCell(salary['employee_id']
-                                                  ?.toString() ??
-                                              'N/A'),
-                                          _buildDataCell(
-                                              salary['fullname']?.toString() ??
-                                                  'N/A'),
-                                          _buildDataCell(
-                                              (salary['company_details']
-                                                          ?['company_name'] ??
-                                                      salary['company_name']
-                                                          ?.toString()) ??
-                                                  'N/A'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['gross_pay'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['basic_pay'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['non_cash_benefits'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['other_earnings'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['overtime_amount'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['absenteeism_deduction'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['taxable_income'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['nhif_deduction'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['paye_deduction'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['nssf_deduction'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['pension_contributions'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['loan_repayment'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['deductions'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['housing_levy'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['housing_levy_relief'] ?? 0)}'),
-                                          _buildDataCell(
-                                              'KES ${numberFormat.format(salary['net_pay'] ?? 0)}'),
-                                          _buildDataCell(
-                                              salary['status']?.toString() ??
-                                                  'N/A'),
-                                          _buildDataCell(salary['payment_date']
-                                                  ?.toString() ??
-                                              'N/A'),
-                                          DataCell(Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                icon: Icon(Icons.download,
-                                                    color: Colors.teal[700]),
-                                                onPressed: () async {
-                                                  final pdfContent =
-                                                      await _generatePdf(
-                                                          salary);
-                                                  await _savePayslipToLocalDisk(
-                                                      salary, pdfContent);
-                                                },
-                                                tooltip: 'Download Payslip',
-                                              ),
-                                              IconButton(
-                                                icon: Icon(Icons.print,
-                                                    color: Colors.teal[700]),
-                                                onPressed: () =>
-                                                    _printPayslip(salary),
-                                                tooltip: 'Print Payslip',
-                                              ),
-                                            ],
-                                          )),
-                                        ],
-                                      );
-                                    }).toList(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  DataColumn _buildDataColumn(String label) {
-    return DataColumn(
-      label: Text(
-        label,
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: Colors.teal[900],
-          fontSize: 14,
-        ),
-      ),
-    );
-  }
-
-  DataCell _buildDataCell(String text) {
-    return DataCell(
-      Text(
-        text,
-        style: TextStyle(
-          color: Colors.grey[800],
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdown<T>({
-    required T? value,
-    required List<T> items,
-    required String Function(T) itemBuilder,
-    required ValueChanged<T?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.teal[200]!),
-      ),
-      child: DropdownButton<T>(
-        value: value,
-        items: items
-            .map((item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(
-                    itemBuilder(item),
-                    style: TextStyle(color: Colors.teal[900]),
-                  ),
-                ))
-            .toList(),
-        onChanged: onChanged,
-        underline: const SizedBox(),
-        dropdownColor: Colors.white,
-        icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
-      ),
-    );
   }
 }

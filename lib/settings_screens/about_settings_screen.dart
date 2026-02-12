@@ -15,16 +15,16 @@ class AboutSettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const AboutSettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _AboutSettingsScreenState createState() => _AboutSettingsScreenState();
+  AboutSettingsScreenState createState() => AboutSettingsScreenState();
 }
 
-class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
+class AboutSettingsScreenState extends State<AboutSettingsScreen> {
   String _appVersion = '1.0.0';
   String _buildNumber = '1';
   bool _isLoading = false;
@@ -37,27 +37,42 @@ class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
   }
 
   // Logout function to clear SharedPreferences and navigate to LoginScreen
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+      builder: (context) =>
+          AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Logout',
+                style: TextStyle(
+                  color: Colors.teal[900],
+                  fontWeight: FontWeight.w600,
+                )),
+            content: Text('Are you sure you want to log out?',
+                style: TextStyle(
+                  color: Colors.grey[700],
+                )),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel', style: TextStyle(color: Colors.grey[700])),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[700],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('Logout', style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Logout'),
-          ),
-        ],
-      ),
     );
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -81,14 +96,23 @@ class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
         _error = null;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load app info: $e';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_error!),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_error!)),
+            ],
+          ),
           backgroundColor: Colors.red[700],
-          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
           action: SnackBarAction(
             label: 'Retry',
             textColor: Colors.white,
@@ -110,11 +134,18 @@ class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
         throw 'Could not launch $url';
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Error: $e')),
+            ],
+          ),
           backgroundColor: Colors.red[700],
-          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     }
@@ -127,32 +158,70 @@ class _AboutSettingsScreenState extends State<AboutSettingsScreen> {
         title: 'About App',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          // Handle notifications
         },
         onProfileTap: () {
           showModalBottomSheet(
             context: context,
-            builder: (context) => Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: Icon(Icons.person, color: Colors.teal[700]),
-                    title: Text('Profile: ${widget.user['username'] ?? 'Unknown'}'),
-                    subtitle: Text('Role: ${widget.user['role'] ?? 'Unknown'}'),
-                  ),
-                  ListTile(
-                    leading: Icon(Icons.logout, color: Colors.red[700]),
-                    title: const Text('Logout'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _logout(context);
-                    },
-                  ),
-                ],
-              ),
+            backgroundColor: Colors.white,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
+            builder: (context) =>
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.teal[100],
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.person, color: Colors.teal[800]),
+                        ),
+                        title: Text('Profile: ${widget.user['username'] ?? 'Unknown'}',
+                            style: TextStyle(
+                              color: Colors.teal[900],
+                              fontWeight: FontWeight.w600,
+                            )),
+                        subtitle: Text('Role: ${widget.user['role'] ?? 'Unknown'}',
+                            style: TextStyle(color: Colors.grey[700])),
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _logout();
+                          },
+                          icon: const Icon(Icons.logout, size: 20),
+                          label: const Text('Logout'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red[700],
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
           );
         },
       ),

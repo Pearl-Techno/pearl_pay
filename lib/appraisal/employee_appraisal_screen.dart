@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:pearl_pay/models/user.dart';
 import 'package:pearl_pay/services/services.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/custom_app_bar.dart';
+
+// Constants - Using same colors as other screens
+class AppraisalFormConstants {
+  static const Color primaryColor = Color(0xFF0D47A1);
+  static const Color secondaryColor = Color(0xFF1976D2);
+  static const Color accentColor = Color(0xFF00B0FF);
+  static const Color successColor = Color(0xFF2E7D32);
+  static const Color backgroundColor = Color(0xFFF5F9FF);
+  static const Color cardColor = Color(0xFFFFFFFF);
+  static const Color textColor = Color(0xFF1A237E);
+  static const Color subtitleColor = Color(0xFF546E7A);
+  static const Color greyColor = Color(0xFF9E9E9E);
+  static const Color errorColor = Color(0xFFC62828);
+  static const Color warningColor = Color(0xFFFF9800);
+}
 
 enum StarRating { none, one, two, three, four, five }
 
@@ -203,8 +217,7 @@ class AppraisalFormProvider with ChangeNotifier {
 
   AppraisalFormProvider({String? employeePosition}) {
     if (employeePosition != null && employeePosition.isNotEmpty) {
-      designation =
-          employeePosition; // Initialize designation with employeePosition
+      designation = employeePosition;
     }
   }
 
@@ -221,74 +234,74 @@ class AppraisalFormProvider with ChangeNotifier {
       case StarRating.one:
         return 'D';
       case StarRating.none:
-      default:
         return '';
     }
   }
 
   void updateField<T>(String field, T value) {
-    if (field == 'designation')
+    if (field == 'designation') {
       designation = value as String;
-    else if (field == 'periodUnderReview')
+    } else if (field == 'periodUnderReview') {
       periodUnderReview = value as String;
-    else if (field == 'lastAppraisalDate')
+    } else if (field == 'lastAppraisalDate') {
       lastAppraisalDate = value as String;
-    else if (field == 'dateOfJoining')
+    } else if (field == 'dateOfJoining') {
       dateOfJoining = value as String;
-    else if (field == 'dateOfAppointment')
+    } else if (field == 'dateOfAppointment') {
       dateOfAppointment = value as String;
-    else if (field == 'appraiserName')
+    } else if (field == 'appraiserName') {
       appraiserName = value as String;
-    else if (field == 'appraiserPosition')
+    } else if (field == 'appraiserPosition') {
       appraiserPosition = value as String;
-    else if (field == 'awards')
+    } else if (field == 'awards') {
       awards = value as String;
-    else if (field == 'recommendations')
+    } else if (field == 'recommendations') {
       recommendations = value as String;
-    else if (field == 'trainingAttended')
+    } else if (field == 'trainingAttended') {
       trainingAttended = value as String;
-    else if (field == 'numberValidWarnings')
+    } else if (field == 'numberValidWarnings') {
       numberValidWarnings = value as int;
-    else if (field == 'absenteeDays')
+    } else if (field == 'absenteeDays') {
       absenteeDays = value as int;
-    else if (field == 'sickOffs')
+    } else if (field == 'sickOffs') {
       sickOffs = value as int;
-    else if (field == 'complianceTraining')
+    } else if (field == 'complianceTraining') {
       complianceTraining = value as bool;
-    else if (field == 'internalControls')
+    } else if (field == 'internalControls') {
       internalControls = value as bool;
-    else if (field == 'careerObjectives')
+    } else if (field == 'careerObjectives') {
       careerObjectives = value as String;
-    else if (field == 'longTermObjectives')
+    } else if (field == 'longTermObjectives') {
       longTermObjectives = value as String;
-    else if (field == 'jobTargets')
+    } else if (field == 'jobTargets') {
       jobTargets = value as String;
-    else if (field == 'developmentNeeds')
+    } else if (field == 'developmentNeeds') {
       developmentNeeds = value as String;
-    else if (field == 'workExposure')
+    } else if (field == 'workExposure') {
       workExposure = value as String;
-    else if (field == 'trainingRequired')
+    } else if (field == 'trainingRequired') {
       trainingRequired = value as String;
-    else if (field == 'promotionPossibilities')
+    } else if (field == 'promotionPossibilities') {
       promotionPossibilities = value as String;
-    else if (field == 'additionalResponsibilities')
+    } else if (field == 'additionalResponsibilities') {
       additionalResponsibilities = value as String;
-    else if (field == 'overallRatingSelf')
+    } else if (field == 'overallRatingSelf') {
       overallRatingSelf = value as StarRating;
-    else if (field == 'overallRatingAppraiser')
+    } else if (field == 'overallRatingAppraiser') {
       overallRatingAppraiser = value as StarRating;
-    else if (field == 'appraiseeComments')
+    } else if (field == 'appraiseeComments') {
       appraiseeComments = value as String;
-    else if (field == 'appraiserComments')
+    } else if (field == 'appraiserComments') {
       appraiserComments = value as String;
-    else if (field == 'generalManagerComments')
+    } else if (field == 'generalManagerComments') {
       generalManagerComments = value as String;
-    else if (field == 'appraiseeSignature')
+    } else if (field == 'appraiseeSignature') {
       appraiseeSignature = value as String;
-    else if (field == 'appraiserSignature')
+    } else if (field == 'appraiserSignature') {
       appraiserSignature = value as String;
-    else if (field == 'generalManagerSignature')
+    } else if (field == 'generalManagerSignature') {
       generalManagerSignature = value as String;
+    }
     notifyListeners();
   }
 
@@ -426,34 +439,54 @@ class AppraisalFormProvider with ChangeNotifier {
         companyId: int.parse(companyId),
         data: data,
       );
-      await showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Success'),
-          content: const Text('Employee appraisal submitted successfully!'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK', style: TextStyle(color: Colors.teal)),
-            ),
-          ],
-        ),
-      );
+      if (!context.mounted) return;
+      _showSuccessSnackBar(context, 'Employee appraisal submitted successfully!');
       onSubmit();
       Navigator.pop(context);
     } catch (e) {
-      errorMessage =
-          e is Exception ? e.toString() : 'Failed to submit appraisal.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(errorMessage!), backgroundColor: Colors.red[700]),
-      );
+      errorMessage = e is Exception ? e.toString() : 'Failed to submit appraisal.';
+      if (!context.mounted) return;
+      _showErrorSnackBar(context, errorMessage!);
     } finally {
       isSubmitting = false;
       notifyListeners();
     }
+  }
+
+  void _showSuccessSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: AppraisalFormConstants.successColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: AppraisalFormConstants.errorColor,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 }
 
@@ -463,7 +496,7 @@ class EmployeeAppraisalScreen extends StatelessWidget {
   final VoidCallback onSubmit;
   final String employeeId;
   final String employeeName;
-  final String employeePosition; // Added
+  final String employeePosition;
 
   const EmployeeAppraisalScreen({
     super.key,
@@ -472,21 +505,20 @@ class EmployeeAppraisalScreen extends StatelessWidget {
     required this.onSubmit,
     required this.employeeId,
     required this.employeeName,
-    required this.employeePosition, // Added
+    required this.employeePosition,
   });
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => AppraisalFormProvider(
-          employeePosition: employeePosition), // Pass employeePosition
+      create: (_) => AppraisalFormProvider(employeePosition: employeePosition),
       child: _EmployeeAppraisalView(
         user: user,
         apiService: apiService,
         onSubmit: onSubmit,
         employeeId: employeeId,
         employeeName: employeeName,
-        employeePosition: employeePosition, // Added
+        employeePosition: employeePosition,
       ),
     );
   }
@@ -498,7 +530,7 @@ class _EmployeeAppraisalView extends StatefulWidget {
   final VoidCallback onSubmit;
   final String employeeId;
   final String employeeName;
-  final String employeePosition; // Added
+  final String employeePosition;
 
   const _EmployeeAppraisalView({
     required this.user,
@@ -506,38 +538,30 @@ class _EmployeeAppraisalView extends StatefulWidget {
     required this.onSubmit,
     required this.employeeId,
     required this.employeeName,
-    required this.employeePosition, // Added
+    required this.employeePosition,
   });
 
   @override
   _EmployeeAppraisalViewState createState() => _EmployeeAppraisalViewState();
 }
 
-class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
-    with SingleTickerProviderStateMixin {
+class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView> {
   final _formKey = GlobalKey<FormState>();
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  final Map<String, bool> _sectionExpanded = {
+    'personal': true,
+    'performance': true,
+    'attributes': true,
+    'skills': true,
+    'compliance': true,
+    'improvement': true,
+    'career': true,
+    'summary': true,
+  };
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _slideAnimation = Tween<Offset>(
-            begin: const Offset(0, 0.1), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+  void _toggleSection(String section) {
+    setState(() {
+      _sectionExpanded[section] = !_sectionExpanded[section]!;
+    });
   }
 
   @override
@@ -545,201 +569,166 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
     final provider = Provider.of<AppraisalFormProvider>(context);
 
     return Scaffold(
+      backgroundColor: AppraisalFormConstants.backgroundColor,
       appBar: CustomAppBar(
-        title:
-            'Appraise ${widget.employeeName} (${widget.employeePosition})', // Updated to include position
-        backgroundColor: Colors.teal[700],
-        titleStyle: GoogleFonts.roboto(
-            fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
+        title: 'Appraise ${widget.employeeName}',
+        backgroundColor: AppraisalFormConstants.primaryColor,
       ),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.white, Colors.teal[50]!],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-            ),
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
+      body: Column(
+        children: [
+          // Header Section
+          _buildHeaderSection(),
+          
+          // Content Area
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Form(
+                key: _formKey,
+                child: SingleChildScrollView(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Employee: ${widget.employeeName}',
-                        style: GoogleFonts.roboto(
-                            fontSize: 18,
-                            color: Colors.teal[900],
-                            fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        'Position: ${widget.employeePosition}',
-                        style: GoogleFonts.roboto(
-                            fontSize: 16, color: Colors.teal[700]),
-                      ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Personal Details',
+                        sectionKey: 'personal',
                         icon: Icons.person,
                         children: [
                           _buildTextField(
-                              label: 'Designation',
-                              value: provider.designation,
-                              onChanged: (v) =>
-                                  provider.updateField('designation', v)),
+                            label: 'Designation',
+                            value: provider.designation,
+                            onChanged: (v) => provider.updateField('designation', v),
+                          ),
                           _buildTextField(
-                              label: 'Period Under Review',
-                              value: provider.periodUnderReview,
-                              onChanged: (v) =>
-                                  provider.updateField('periodUnderReview', v)),
+                            label: 'Period Under Review',
+                            value: provider.periodUnderReview,
+                            onChanged: (v) => provider.updateField('periodUnderReview', v),
+                          ),
                           _buildTextField(
-                              label: 'Last Appraisal Date',
-                              value: provider.lastAppraisalDate,
-                              onChanged: (v) =>
-                                  provider.updateField('lastAppraisalDate', v)),
+                            label: 'Last Appraisal Date',
+                            value: provider.lastAppraisalDate,
+                            onChanged: (v) => provider.updateField('lastAppraisalDate', v),
+                          ),
                           _buildTextField(
-                              label: 'Date of Joining',
-                              value: provider.dateOfJoining,
-                              onChanged: (v) =>
-                                  provider.updateField('dateOfJoining', v)),
+                            label: 'Date of Joining',
+                            value: provider.dateOfJoining,
+                            onChanged: (v) => provider.updateField('dateOfJoining', v),
+                          ),
                           _buildTextField(
-                              label: 'Date of Appointment',
-                              value: provider.dateOfAppointment,
-                              onChanged: (v) =>
-                                  provider.updateField('dateOfAppointment', v)),
+                            label: 'Date of Appointment',
+                            value: provider.dateOfAppointment,
+                            onChanged: (v) => provider.updateField('dateOfAppointment', v),
+                          ),
                           _buildTextField(
-                              label: 'Appraiser Name',
-                              value: provider.appraiserName,
-                              onChanged: (v) =>
-                                  provider.updateField('appraiserName', v)),
+                            label: 'Appraiser Name',
+                            value: provider.appraiserName,
+                            onChanged: (v) => provider.updateField('appraiserName', v),
+                          ),
                           _buildTextField(
-                              label: 'Appraiser Position',
-                              value: provider.appraiserPosition,
-                              onChanged: (v) =>
-                                  provider.updateField('appraiserPosition', v)),
+                            label: 'Appraiser Position',
+                            value: provider.appraiserPosition,
+                            onChanged: (v) => provider.updateField('appraiserPosition', v),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Performance Record',
+                        sectionKey: 'performance',
                         icon: Icons.assessment,
                         children: [
                           _buildTextField(
-                              label: 'Awards',
-                              value: provider.awards,
-                              onChanged: (v) =>
-                                  provider.updateField('awards', v)),
+                            label: 'Awards',
+                            value: provider.awards,
+                            onChanged: (v) => provider.updateField('awards', v),
+                          ),
                           _buildTextField(
-                              label: 'Recommendations',
-                              value: provider.recommendations,
-                              onChanged: (v) =>
-                                  provider.updateField('recommendations', v)),
+                            label: 'Recommendations',
+                            value: provider.recommendations,
+                            onChanged: (v) => provider.updateField('recommendations', v),
+                          ),
                           _buildTextField(
-                              label: 'Training Attended',
-                              value: provider.trainingAttended,
-                              onChanged: (v) =>
-                                  provider.updateField('trainingAttended', v)),
+                            label: 'Training Attended',
+                            value: provider.trainingAttended,
+                            onChanged: (v) => provider.updateField('trainingAttended', v),
+                          ),
                           _buildNumberField(
-                              label: 'Valid Warnings',
-                              value: provider.numberValidWarnings,
-                              onChanged: (v) => provider.updateField(
-                                  'numberValidWarnings', v)),
+                            label: 'Valid Warnings',
+                            value: provider.numberValidWarnings,
+                            onChanged: (v) => provider.updateField('numberValidWarnings', v),
+                          ),
                           _buildNumberField(
-                              label: 'Absentee Days',
-                              value: provider.absenteeDays,
-                              onChanged: (v) =>
-                                  provider.updateField('absenteeDays', v)),
+                            label: 'Absentee Days',
+                            value: provider.absenteeDays,
+                            onChanged: (v) => provider.updateField('absenteeDays', v),
+                          ),
                           _buildNumberField(
-                              label: 'Sick Days',
-                              value: provider.sickOffs,
-                              onChanged: (v) =>
-                                  provider.updateField('sickOffs', v)),
+                            label: 'Sick Days',
+                            value: provider.sickOffs,
+                            onChanged: (v) => provider.updateField('sickOffs', v),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Personal Attributes',
+                        sectionKey: 'attributes',
                         icon: Icons.person_outline,
                         children: provider.personalAttributes.entries
                             .map((entry) => _buildAttributeField(
-                                  label: entry.key
-                                      .replaceAll('_', ' ')
-                                      .toTitleCase(),
+                                  label: entry.key.replaceAll('_', ' ').toTitleCase(),
                                   selfRating: entry.value['self'],
                                   appraiserRating: entry.value['appraiser'],
                                   comments: entry.value['comments'],
-                                  onSelfRatingChanged: (v) => provider
-                                      .updateAttribute(entry.key, 'self', v),
-                                  onAppraiserRatingChanged: (v) =>
-                                      provider.updateAttribute(
-                                          entry.key, 'appraiser', v),
-                                  onCommentsChanged: (v) =>
-                                      provider.updateAttribute(
-                                          entry.key, 'comments', v),
+                                  onSelfRatingChanged: (v) => provider.updateAttribute(entry.key, 'self', v),
+                                  onAppraiserRatingChanged: (v) => provider.updateAttribute(entry.key, 'appraiser', v),
+                                  onCommentsChanged: (v) => provider.updateAttribute(entry.key, 'comments', v),
                                 ))
                             .toList(),
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Operational Skills',
+                        sectionKey: 'skills',
                         icon: Icons.work,
                         children: provider.operationalSkills.entries
                             .map((entry) => _buildAttributeField(
-                                  label: entry.key
-                                      .replaceAll('_', ' ')
-                                      .toTitleCase(),
+                                  label: entry.key.replaceAll('_', ' ').toTitleCase(),
                                   selfRating: entry.value['self'],
                                   appraiserRating: entry.value['appraiser'],
                                   description: entry.value['description'],
                                   comments: entry.value['comments'],
-                                  onSelfRatingChanged: (v) => provider
-                                      .updateAttribute(entry.key, 'self', v,
-                                          isPersonal: false),
-                                  onAppraiserRatingChanged: (v) =>
-                                      provider.updateAttribute(
-                                          entry.key, 'appraiser', v,
-                                          isPersonal: false),
-                                  onDescriptionChanged:
-                                      entry.key.startsWith('essential_function')
-                                          ? (v) => provider.updateAttribute(
-                                              entry.key, 'description', v,
-                                              isPersonal: false)
-                                          : null,
-                                  onCommentsChanged: (v) => provider
-                                      .updateAttribute(entry.key, 'comments', v,
-                                          isPersonal: false),
+                                  onSelfRatingChanged: (v) => provider.updateAttribute(entry.key, 'self', v, isPersonal: false),
+                                  onAppraiserRatingChanged: (v) => provider.updateAttribute(entry.key, 'appraiser', v, isPersonal: false),
+                                  onDescriptionChanged: entry.key.startsWith('essential_function')
+                                      ? (v) => provider.updateAttribute(entry.key, 'description', v, isPersonal: false)
+                                      : null,
+                                  onCommentsChanged: (v) => provider.updateAttribute(entry.key, 'comments', v, isPersonal: false),
                                 ))
                             .toList(),
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Compliance',
+                        sectionKey: 'compliance',
                         icon: Icons.verified,
                         children: [
                           _buildSwitchField(
                             label: 'Current with Trainings',
                             value: provider.complianceTraining,
-                            onChanged: (v) =>
-                                provider.updateField('complianceTraining', v),
+                            onChanged: (v) => provider.updateField('complianceTraining', v),
                           ),
                           _buildSwitchField(
                             label: 'Safeguards Assets',
                             value: provider.internalControls,
-                            onChanged: (v) =>
-                                provider.updateField('internalControls', v),
+                            onChanged: (v) => provider.updateField('internalControls', v),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Improvement Plan',
+                        sectionKey: 'improvement',
                         icon: Icons.trending_up,
                         children: [
                           ...provider.improvementPlan
@@ -751,140 +740,198 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
                                     action: entry.value['action']!,
                                     goal: entry.value['goal']!,
                                     timing: entry.value['timing']!,
-                                    onAreaChanged: (v) =>
-                                        provider.updateImprovementPlan(
-                                            entry.key, 'area', v),
-                                    onActionChanged: (v) =>
-                                        provider.updateImprovementPlan(
-                                            entry.key, 'action', v),
-                                    onGoalChanged: (v) =>
-                                        provider.updateImprovementPlan(
-                                            entry.key, 'goal', v),
-                                    onTimingChanged: (v) =>
-                                        provider.updateImprovementPlan(
-                                            entry.key, 'timing', v),
+                                    onAreaChanged: (v) => provider.updateImprovementPlan(entry.key, 'area', v),
+                                    onActionChanged: (v) => provider.updateImprovementPlan(entry.key, 'action', v),
+                                    onGoalChanged: (v) => provider.updateImprovementPlan(entry.key, 'goal', v),
+                                    onTimingChanged: (v) => provider.updateImprovementPlan(entry.key, 'timing', v),
                                   )),
-                          TextButton.icon(
-                            icon: const Icon(Icons.add, color: Colors.teal),
-                            label: const Text('Add Entry',
-                                style: TextStyle(color: Colors.teal)),
+                          _buildAddButton(
                             onPressed: provider.addImprovementPlanEntry,
+                            label: 'Add Improvement Entry',
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Career Development',
+                        sectionKey: 'career',
                         icon: Icons.school,
                         children: [
                           _buildTextField(
-                              label: 'Career Objectives',
-                              value: provider.careerObjectives,
-                              onChanged: (v) =>
-                                  provider.updateField('careerObjectives', v),
-                              maxLines: 5),
+                            label: 'Career Objectives',
+                            value: provider.careerObjectives,
+                            onChanged: (v) => provider.updateField('careerObjectives', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Long-Term Objectives',
-                              value: provider.longTermObjectives,
-                              onChanged: (v) =>
-                                  provider.updateField('longTermObjectives', v),
-                              maxLines: 5),
+                            label: 'Long-Term Objectives',
+                            value: provider.longTermObjectives,
+                            onChanged: (v) => provider.updateField('longTermObjectives', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Job Targets',
-                              value: provider.jobTargets,
-                              onChanged: (v) =>
-                                  provider.updateField('jobTargets', v),
-                              maxLines: 5),
+                            label: 'Job Targets',
+                            value: provider.jobTargets,
+                            onChanged: (v) => provider.updateField('jobTargets', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Development Needs',
-                              value: provider.developmentNeeds,
-                              onChanged: (v) =>
-                                  provider.updateField('developmentNeeds', v),
-                              maxLines: 5),
+                            label: 'Development Needs',
+                            value: provider.developmentNeeds,
+                            onChanged: (v) => provider.updateField('developmentNeeds', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Work Exposure',
-                              value: provider.workExposure,
-                              onChanged: (v) =>
-                                  provider.updateField('workExposure', v),
-                              maxLines: 3),
+                            label: 'Work Exposure',
+                            value: provider.workExposure,
+                            onChanged: (v) => provider.updateField('workExposure', v),
+                            maxLines: 3,
+                          ),
                           _buildTextField(
-                              label: 'Training Required',
-                              value: provider.trainingRequired,
-                              onChanged: (v) =>
-                                  provider.updateField('trainingRequired', v),
-                              maxLines: 3),
+                            label: 'Training Required',
+                            value: provider.trainingRequired,
+                            onChanged: (v) => provider.updateField('trainingRequired', v),
+                            maxLines: 3,
+                          ),
                           _buildTextField(
-                              label: 'Promotion Possibilities',
-                              value: provider.promotionPossibilities,
-                              onChanged: (v) => provider.updateField(
-                                  'promotionPossibilities', v),
-                              maxLines: 3),
+                            label: 'Promotion Possibilities',
+                            value: provider.promotionPossibilities,
+                            onChanged: (v) => provider.updateField('promotionPossibilities', v),
+                            maxLines: 3,
+                          ),
                           _buildTextField(
-                              label: 'Additional Responsibilities',
-                              value: provider.additionalResponsibilities,
-                              onChanged: (v) => provider.updateField(
-                                  'additionalResponsibilities', v),
-                              maxLines: 3),
+                            label: 'Additional Responsibilities',
+                            value: provider.additionalResponsibilities,
+                            onChanged: (v) => provider.updateField('additionalResponsibilities', v),
+                            maxLines: 3,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       _buildSection(
                         title: 'Summary',
+                        sectionKey: 'summary',
                         icon: Icons.summarize,
                         children: [
                           _buildStarRatingField(
-                              label: 'Overall Rating (Self)',
-                              value: provider.overallRatingSelf,
-                              onChanged: (v) =>
-                                  provider.updateField('overallRatingSelf', v)),
+                            label: 'Overall Rating (Self)',
+                            value: provider.overallRatingSelf,
+                            onChanged: (v) => provider.updateField('overallRatingSelf', v),
+                          ),
                           _buildStarRatingField(
-                              label: 'Overall Rating (Appraiser)',
-                              value: provider.overallRatingAppraiser,
-                              onChanged: (v) => provider.updateField(
-                                  'overallRatingAppraiser', v)),
+                            label: 'Overall Rating (Appraiser)',
+                            value: provider.overallRatingAppraiser,
+                            onChanged: (v) => provider.updateField('overallRatingAppraiser', v),
+                          ),
                           _buildTextField(
-                              label: 'Appraisee Comments',
-                              value: provider.appraiseeComments,
-                              onChanged: (v) =>
-                                  provider.updateField('appraiseeComments', v),
-                              maxLines: 5),
+                            label: 'Appraisee Comments',
+                            value: provider.appraiseeComments,
+                            onChanged: (v) => provider.updateField('appraiseeComments', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Appraiser Comments',
-                              value: provider.appraiserComments,
-                              onChanged: (v) =>
-                                  provider.updateField('appraiserComments', v),
-                              maxLines: 5),
+                            label: 'Appraiser Comments',
+                            value: provider.appraiserComments,
+                            onChanged: (v) => provider.updateField('appraiserComments', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'General Manager Comments',
-                              value: provider.generalManagerComments,
-                              onChanged: (v) => provider.updateField(
-                                  'generalManagerComments', v),
-                              maxLines: 5),
+                            label: 'General Manager Comments',
+                            value: provider.generalManagerComments,
+                            onChanged: (v) => provider.updateField('generalManagerComments', v),
+                            maxLines: 5,
+                          ),
                           _buildTextField(
-                              label: 'Appraisee Signature',
-                              value: provider.appraiseeSignature,
-                              onChanged: (v) => provider.updateField(
-                                  'appraiseeSignature', v)),
+                            label: 'Appraisee Signature',
+                            value: provider.appraiseeSignature,
+                            onChanged: (v) => provider.updateField('appraiseeSignature', v),
+                          ),
                           _buildTextField(
-                              label: 'Appraiser Signature',
-                              value: provider.appraiserSignature,
-                              onChanged: (v) => provider.updateField(
-                                  'appraiserSignature', v)),
+                            label: 'Appraiser Signature',
+                            value: provider.appraiserSignature,
+                            onChanged: (v) => provider.updateField('appraiserSignature', v),
+                          ),
                           _buildTextField(
-                              label: 'General Manager Signature',
-                              value: provider.generalManagerSignature,
-                              onChanged: (v) => provider.updateField(
-                                  'generalManagerSignature', v)),
+                            label: 'General Manager Signature',
+                            value: provider.generalManagerSignature,
+                            onChanged: (v) => provider.updateField('generalManagerSignature', v),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 24),
                       _buildActionButtons(context, provider),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppraisalFormConstants.primaryColor, AppraisalFormConstants.secondaryColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withAlpha(51),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.assessment,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Employee Appraisal',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Appraising ${widget.employeeName} - ${widget.employeePosition}',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(230),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -892,32 +939,28 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
 
   Widget _buildSection({
     required String title,
+    required String sectionKey,
     required IconData icon,
     required List<Widget> children,
   }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.teal.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 4)),
-        ],
-      ),
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ExpansionTile(
-        leading: Icon(icon, color: Colors.teal[700], size: 28),
+        leading: Icon(icon, color: AppraisalFormConstants.primaryColor, size: 24),
         title: Text(
           title,
-          style: GoogleFonts.roboto(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.teal[800]),
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: AppraisalFormConstants.textColor,
+          ),
         ),
-        iconColor: Colors.teal[700],
+        iconColor: AppraisalFormConstants.primaryColor,
+        collapsedIconColor: AppraisalFormConstants.primaryColor,
         childrenPadding: const EdgeInsets.all(16),
+        initiallyExpanded: _sectionExpanded[sectionKey]!,
+        onExpansionChanged: (expanded) => _toggleSection(sectionKey),
         children: children,
       ),
     );
@@ -934,28 +977,33 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
       child: TextFormField(
         initialValue: value,
         decoration: InputDecoration(
-          prefixIcon: Icon(Icons.edit, color: Colors.teal[700]),
           labelText: label,
           hintText: 'Enter $label',
           filled: true,
-          fillColor: Colors.teal[50],
+          fillColor: AppraisalFormConstants.backgroundColor,
           border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
           focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.teal[700]!, width: 2)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppraisalFormConstants.primaryColor, width: 2),
+          ),
           errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.red)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red),
+          ),
           suffixIcon: value.isNotEmpty
-              ? const Icon(Icons.check_circle, color: Colors.green)
+              ? Icon(Icons.check_circle, color: AppraisalFormConstants.successColor)
               : null,
         ),
         validator: (v) => v == null || v.isEmpty ? '$label is required' : null,
         onChanged: onChanged,
         maxLines: maxLines,
-        style: GoogleFonts.roboto(fontSize: 16, color: Colors.black87),
+        style: TextStyle(
+          fontSize: 14,
+          color: AppraisalFormConstants.textColor,
+        ),
         textInputAction: TextInputAction.next,
       ),
     );
@@ -971,22 +1019,24 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
       child: TextFormField(
         initialValue: value.toString(),
         decoration: InputDecoration(
-          prefixIcon: Icon(Icons.numbers, color: Colors.teal[700]),
           labelText: label,
           hintText: 'Enter $label',
           filled: true,
-          fillColor: Colors.teal[50],
+          fillColor: AppraisalFormConstants.backgroundColor,
           border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
           focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.teal[700]!, width: 2)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: AppraisalFormConstants.primaryColor, width: 2),
+          ),
           errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.red)),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red),
+          ),
           suffixIcon: value > 0
-              ? const Icon(Icons.check_circle, color: Colors.green)
+              ? Icon(Icons.check_circle, color: AppraisalFormConstants.successColor)
               : null,
         ),
         keyboardType: TextInputType.number,
@@ -994,7 +1044,10 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
             ? '$label must be a number'
             : null,
         onChanged: (v) => onChanged(int.tryParse(v) ?? 0),
-        style: GoogleFonts.roboto(fontSize: 16, color: Colors.black87),
+        style: TextStyle(
+          fontSize: 14,
+          color: AppraisalFormConstants.textColor,
+        ),
         textInputAction: TextInputAction.next,
       ),
     );
@@ -1012,10 +1065,11 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
         children: [
           Text(
             label,
-            style: GoogleFonts.roboto(
-                fontSize: 16,
-                color: Colors.teal[800],
-                fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppraisalFormConstants.textColor,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -1024,7 +1078,7 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
                 icon: Icon(
                   index < value.index ? Icons.star : Icons.star_border,
                   color: Colors.amber[700],
-                  size: 32,
+                  size: 28,
                 ),
                 onPressed: () => onChanged(StarRating.values[index + 1]),
                 tooltip: '${index + 1} Star${index == 0 ? '' : 's'}',
@@ -1060,30 +1114,35 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
           children: [
             Text(
               label,
-              style: GoogleFonts.roboto(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.teal[900]),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppraisalFormConstants.textColor,
+              ),
             ),
             const SizedBox(height: 12),
             _buildStarRatingField(
-                label: 'Self Rating',
-                value: selfRating,
-                onChanged: onSelfRatingChanged),
+              label: 'Self Rating',
+              value: selfRating,
+              onChanged: onSelfRatingChanged,
+            ),
             _buildStarRatingField(
-                label: 'Appraiser Rating',
-                value: appraiserRating,
-                onChanged: onAppraiserRatingChanged),
+              label: 'Appraiser Rating',
+              value: appraiserRating,
+              onChanged: onAppraiserRatingChanged,
+            ),
             if (onDescriptionChanged != null)
               _buildTextField(
-                  label: 'Description',
-                  value: description ?? '',
-                  onChanged: onDescriptionChanged),
+                label: 'Description',
+                value: description ?? '',
+                onChanged: onDescriptionChanged,
+              ),
             if (onCommentsChanged != null)
               _buildTextField(
-                  label: 'Comments',
-                  value: comments ?? '',
-                  onChanged: onCommentsChanged),
+                label: 'Comments',
+                value: comments ?? '',
+                onChanged: onCommentsChanged,
+              ),
           ],
         ),
       ),
@@ -1112,24 +1171,33 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
           children: [
             Text(
               'Entry ${index + 1}',
-              style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.teal[900]),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppraisalFormConstants.textColor,
+              ),
             ),
             const SizedBox(height: 8),
             _buildTextField(
-                label: 'Area for Improvement',
-                value: area,
-                onChanged: onAreaChanged),
+              label: 'Area for Improvement',
+              value: area,
+              onChanged: onAreaChanged,
+            ),
             _buildTextField(
-                label: 'Action Plan',
-                value: action,
-                onChanged: onActionChanged),
+              label: 'Action Plan',
+              value: action,
+              onChanged: onActionChanged,
+            ),
             _buildTextField(
-                label: 'Goal', value: goal, onChanged: onGoalChanged),
+              label: 'Goal',
+              value: goal,
+              onChanged: onGoalChanged,
+            ),
             _buildTextField(
-                label: 'Timing', value: timing, onChanged: onTimingChanged),
+              label: 'Timing',
+              value: timing,
+              onChanged: onTimingChanged,
+            ),
           ],
         ),
       ),
@@ -1146,71 +1214,83 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.teal[700], size: 24),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style:
-                    GoogleFonts.roboto(fontSize: 16, color: Colors.teal[800]),
-              ),
-            ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              color: AppraisalFormConstants.textColor,
+            ),
           ),
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.teal[700],
-            inactiveTrackColor: Colors.grey[300],
+            activeThumbColor: AppraisalFormConstants.primaryColor,
+            activeTrackColor: AppraisalFormConstants.primaryColor.withAlpha(128),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionButtons(
-      BuildContext context, AppraisalFormProvider provider) {
+  Widget _buildAddButton({
+    required VoidCallback onPressed,
+    required String label,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppraisalFormConstants.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppraisalFormConstants.primaryColor.withAlpha(77)),
+      ),
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(Icons.add, color: AppraisalFormConstants.primaryColor),
+        label: Text(
+          label,
+          style: TextStyle(color: AppraisalFormConstants.primaryColor),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context, AppraisalFormProvider provider) {
     return Row(
       children: [
         Expanded(
-          child: ScaleTransitionButton(
+          child: ElevatedButton(
             onPressed: provider.isSubmitting
                 ? null
                 : () {
                     if (_formKey.currentState!.validate()) {
-                      _buildPreviewDialog(context, provider);
+                      _showPreviewDialog(context, provider);
                     }
                   },
-            child: ElevatedButton(
-              onPressed: provider.isSubmitting
-                  ? null
-                  : () {
-                      if (_formKey.currentState!.validate()) {
-                        _buildPreviewDialog(context, provider);
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.grey[600],
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.preview, size: 20, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Text('Preview',
-                      style: GoogleFonts.roboto(
-                          fontSize: 16, color: Colors.white)),
-                ],
-              ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppraisalFormConstants.accentColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.preview, size: 20),
+                const SizedBox(width: 8),
+                Text('Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ],
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 12),
         Expanded(
-          child: ScaleTransitionButton(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppraisalFormConstants.primaryColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: provider.isSubmitting
                 ? null
                 : () {
@@ -1224,68 +1304,38 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
                       );
                     }
                   },
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal[700],
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: provider.isSubmitting
-                  ? null
-                  : () {
-                      if (_formKey.currentState!.validate()) {
-                        provider.submitAppraisal(
-                          apiService: widget.apiService,
-                          employeeId: widget.employeeId,
-                          companyId: widget.user.companyId.toString(),
-                          onSubmit: widget.onSubmit,
-                          context: context,
-                        );
-                      }
-                    },
-              child: provider.isSubmitting
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.send, size: 20, color: Colors.white),
-                        const SizedBox(width: 8),
-                        Text('Submit',
-                            style: GoogleFonts.roboto(
-                                fontSize: 16, color: Colors.white)),
-                      ],
-                    ),
-            ),
+            child: provider.isSubmitting
+                ? SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.send, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Submit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
           ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
-          child: ScaleTransitionButton(
+          child: OutlinedButton(
             onPressed: provider.isSubmitting ? null : provider.clearForm,
-            child: OutlinedButton(
-              onPressed: provider.isSubmitting ? null : provider.clearForm,
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Colors.red[700]!),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.clear, color: Colors.red[700]),
-                  const SizedBox(width: 8),
-                  Text('Clear',
-                      style: GoogleFonts.roboto(
-                          fontSize: 16, color: Colors.red[700])),
-                ],
-              ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppraisalFormConstants.errorColor),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.clear, color: AppraisalFormConstants.errorColor),
+                const SizedBox(width: 8),
+                Text('Clear', style: TextStyle(fontSize: 16, color: AppraisalFormConstants.errorColor)),
+              ],
             ),
           ),
         ),
@@ -1293,212 +1343,73 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
     );
   }
 
-  void _buildPreviewDialog(
-      BuildContext context, AppraisalFormProvider provider) {
+  void _showPreviewDialog(BuildContext context, AppraisalFormProvider provider) {
     showDialog(
       context: context,
-      builder: (context) => DefaultTabController(
-        length: 5,
-        child: AlertDialog(
-          backgroundColor: Colors.white,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Column(
-            children: [
-              Text('Appraisal Preview',
-                  style: GoogleFonts.roboto(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.teal[900])),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.teal[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: TabBar(
-                  isScrollable: true,
-                  indicatorColor: Colors.teal[700],
-                  labelColor: Colors.teal[800],
-                  unselectedLabelColor: Colors.grey[600],
-                  labelStyle: GoogleFonts.roboto(
-                      fontSize: 14, fontWeight: FontWeight.w500),
-                  tabs: [
-                    const Tab(text: 'Personal'),
-                    Tab(text: 'Performance'),
-                    Tab(text: 'Attributes'),
-                    Tab(text: 'Plans'),
-                    Tab(text: 'Summary'),
-                  ],
-                ),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        backgroundColor: AppraisalFormConstants.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Appraisal Preview',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppraisalFormConstants.textColor,
           ),
-          content: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.8,
-            height: 400,
-            child: TabBarView(
+        ),
+        content: SizedBox(
+          width: MediaQuery.of(context).size.width * 0.8,
+          height: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildPreviewSection('Personal Details', [
-                  _buildPreviewItem('Designation', provider.designation),
-                  _buildPreviewItem(
-                      'Period Under Review', provider.periodUnderReview),
-                  _buildPreviewItem(
-                      'Last Appraisal', provider.lastAppraisalDate),
-                  _buildPreviewItem('Date of Joining', provider.dateOfJoining),
-                  _buildPreviewItem(
-                      'Date of Appointment', provider.dateOfAppointment),
-                  _buildPreviewItem('Appraiser Name', provider.appraiserName),
-                  _buildPreviewItem(
-                      'Appraiser Position', provider.appraiserPosition),
-                ]),
-                _buildPreviewSection('Performance Record', [
-                  _buildPreviewItem('Awards', provider.awards),
-                  _buildPreviewItem(
-                      'Recommendations', provider.recommendations),
-                  _buildPreviewItem(
-                      'Training Attended', provider.trainingAttended),
-                  _buildPreviewItem('Valid Warnings',
-                      provider.numberValidWarnings.toString()),
-                  _buildPreviewItem(
-                      'Absentee Days', provider.absenteeDays.toString()),
-                  _buildPreviewItem('Sick Days', provider.sickOffs.toString()),
-                ]),
-                _buildPreviewSection('Attributes', [
-                  ...provider.personalAttributes.entries
-                      .map((entry) => [
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} (Self)',
-                                '${entry.value['self'].index} Stars'),
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} (Appraiser)',
-                                '${entry.value['appraiser'].index} Stars'),
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} Comments',
-                                entry.value['comments']),
-                          ])
-                      .expand((e) => e),
-                  ...provider.operationalSkills.entries
-                      .map((entry) => [
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} (Self)',
-                                '${entry.value['self'].index} Stars'),
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} (Appraiser)',
-                                '${entry.value['appraiser'].index} Stars'),
-                            if (entry.key.startsWith('essential_function'))
-                              _buildPreviewItem(
-                                  '${entry.key.replaceAll('_', ' ').toTitleCase()} Description',
-                                  entry.value['description']),
-                            _buildPreviewItem(
-                                '${entry.key.replaceAll('_', ' ').toTitleCase()} Comments',
-                                entry.value['comments']),
-                          ])
-                      .expand((e) => e),
-                  _buildPreviewItem('Compliance Training',
-                      provider.complianceTraining ? 'Yes' : 'No'),
-                  _buildPreviewItem('Internal Controls',
-                      provider.internalControls ? 'Yes' : 'No'),
-                ]),
-                _buildPreviewSection('Plans', [
-                  ...provider.improvementPlan
-                      .asMap()
-                      .entries
-                      .map((entry) => [
-                            _buildPreviewItem('Entry ${entry.key + 1}: Area',
-                                entry.value['area']!),
-                            _buildPreviewItem('Entry ${entry.key + 1}: Action',
-                                entry.value['action']!),
-                            _buildPreviewItem('Entry ${entry.key + 1}: Goal',
-                                entry.value['goal']!),
-                            _buildPreviewItem('Entry ${entry.key + 1}: Timing',
-                                entry.value['timing']!),
-                          ])
-                      .expand((e) => e),
-                  _buildPreviewItem(
-                      'Career Objectives', provider.careerObjectives),
-                  _buildPreviewItem(
-                      'Long-Term Objectives', provider.longTermObjectives),
-                  _buildPreviewItem('Job Targets', provider.jobTargets),
-                  _buildPreviewItem(
-                      'Development Needs', provider.developmentNeeds),
-                  _buildPreviewItem('Work Exposure', provider.workExposure),
-                  _buildPreviewItem(
-                      'Training Required', provider.trainingRequired),
-                  _buildPreviewItem('Promotion Possibilities',
-                      provider.promotionPossibilities),
-                  _buildPreviewItem('Additional Responsibilities',
-                      provider.additionalResponsibilities),
-                ]),
-                _buildPreviewSection('Summary', [
-                  _buildPreviewItem('Overall Rating (Self)',
-                      '${provider.overallRatingSelf.index} Stars'),
-                  _buildPreviewItem('Overall Rating (Appraiser)',
-                      '${provider.overallRatingAppraiser.index} Stars'),
-                  _buildPreviewItem(
-                      'Appraisee Comments', provider.appraiseeComments),
-                  _buildPreviewItem(
-                      'Appraiser Comments', provider.appraiserComments),
-                  _buildPreviewItem('General Manager Comments',
-                      provider.generalManagerComments),
-                  _buildPreviewItem(
-                      'Appraisee Signature', provider.appraiseeSignature),
-                  _buildPreviewItem(
-                      'Appraiser Signature', provider.appraiserSignature),
-                  _buildPreviewItem('General Manager Signature',
-                      provider.generalManagerSignature),
-                ]),
+                Text(
+                  'Employee: ${widget.employeeName}',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppraisalFormConstants.textColor),
+                ),
+                Text(
+                  'Position: ${widget.employeePosition}',
+                  style: TextStyle(fontSize: 14, color: AppraisalFormConstants.subtitleColor),
+                ),
+                const SizedBox(height: 16),
+                _buildPreviewItem('Designation', provider.designation),
+                _buildPreviewItem('Period Under Review', provider.periodUnderReview),
+                _buildPreviewItem('Overall Rating', '${provider.overallRatingSelf.index} Stars'),
+                _buildPreviewItem('Career Objectives', provider.careerObjectives),
+                _buildPreviewItem('Appraiser Comments', provider.appraiserComments),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel',
-                  style: GoogleFonts.roboto(color: Colors.grey[600])),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                provider.submitAppraisal(
-                  apiService: widget.apiService,
-                  employeeId: widget.employeeId,
-                  companyId: widget.user.companyId.toString(),
-                  onSubmit: widget.onSubmit,
-                  context: context,
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal[700],
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Text('Submit',
-                  style: GoogleFonts.roboto(color: Colors.white)),
-            ),
-          ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildPreviewSection(String title, List<Widget> items) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
             child: Text(
-              title,
-              style: GoogleFonts.roboto(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.teal[800]),
+              'Cancel',
+              style: TextStyle(color: AppraisalFormConstants.subtitleColor),
             ),
           ),
-          ...items,
-          const Divider(),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              provider.submitAppraisal(
+                apiService: widget.apiService,
+                employeeId: widget.employeeId,
+                companyId: widget.user.companyId.toString(),
+                onSubmit: widget.onSubmit,
+                context: context,
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppraisalFormConstants.primaryColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(
+              'Submit',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );
@@ -1514,70 +1425,21 @@ class _EmployeeAppraisalViewState extends State<_EmployeeAppraisalView>
             flex: 2,
             child: Text(
               '$label:',
-              style: GoogleFonts.roboto(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.teal[700]),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppraisalFormConstants.textColor,
+              ),
             ),
           ),
           Expanded(
             flex: 3,
             child: Text(
               value.isEmpty ? 'N/A' : value,
-              style: GoogleFonts.roboto(fontSize: 14, color: Colors.black87),
+              style: TextStyle(fontSize: 14, color: AppraisalFormConstants.subtitleColor),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// Custom widget for scale transition button
-class ScaleTransitionButton extends StatefulWidget {
-  final VoidCallback? onPressed;
-  final Widget child;
-
-  const ScaleTransitionButton(
-      {super.key, required this.onPressed, required this.child});
-
-  @override
-  _ScaleTransitionButtonState createState() => _ScaleTransitionButtonState();
-}
-
-class _ScaleTransitionButtonState extends State<ScaleTransitionButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 100),
-    );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(_controller);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        if (widget.onPressed != null) widget.onPressed!();
-      },
-      onTapCancel: () => _controller.reverse(),
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: widget.child,
       ),
     );
   }

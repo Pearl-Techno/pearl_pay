@@ -18,9 +18,9 @@ class ApiEndpoints {
   static const String calculateNHIF = 'calculate_nhif.php';
 
   // Overtime
-  static const String getOvertimeList = 'get_all_overtime.php';
-  static const String addOvertime = 'add_overtime.php';
-  static const String fetchOvertimeAmount = 'fetch_overtime_amount.php';
+  static const String getOvertimeList = 'overtime/get_all_overtime.php';
+  static const String addOvertime = 'overtime/add_overtime.php';
+  static const String fetchOvertimeAmount = 'overtime/fetch_overtime_amount.php';
 
   // Deductions and Benefits
   static const String fetchAbsenteeismDeduction =

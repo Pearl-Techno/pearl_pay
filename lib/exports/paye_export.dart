@@ -94,18 +94,14 @@ class PAYEExport {
   }) async {
     try {
       final employees = await apiService.getEmployeeList(companyId);
-      final salaries = await apiService.getSalaries(companyId);
+      final salaries = await apiService.getSalaries(companyId, month: month, year: year);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         final matchesMonthYear = paymentDate != null &&
             paymentDate.month == month &&
             paymentDate.year == year;
-        final hasPAYE =
-            (double.tryParse(salary['paye_deduction']?.toString() ?? '0.0') ??
-                    0.0) >
-                0;
-        return matchesMonthYear && hasPAYE;
+        return matchesMonthYear;
       }).toList();
 
       final payeEmployeeIds = filteredSalaries
@@ -186,6 +182,8 @@ class PAYEExport {
     required int month,
     required ApiService apiService,
     required int companyId,
+    List<String>? visibleColumns,
+    Map<String, String>? columnDataKeys,
   }) async {
     if (employees.isEmpty) {
       throw Exception('No data available to export');
@@ -237,15 +235,11 @@ class PAYEExport {
         ];
         fileName = 'paye_summary_${sanitizedCompanyName}_$monthYear.csv';
       } else if (exportType == 'annual') {
-        final allSalaries = await apiService.getSalaries(companyId);
+        final allSalaries = await apiService.getSalaries(companyId, year: year);
         final annualSalaries = allSalaries.where((salary) {
           final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
           final matchesYear = paymentDate != null && paymentDate.year == year;
-          final hasPAYE =
-              (double.tryParse(salary['paye_deduction']?.toString() ?? '0.0') ??
-                      0.0) >
-                  0;
-          return matchesYear && hasPAYE;
+          return matchesYear;
         }).toList();
 
         final annualEmployeeIds = annualSalaries
@@ -488,6 +482,58 @@ class PAYEExport {
           }),
         ];
         fileName = 'paye_annual_${sanitizedCompanyName}_$year.csv';
+      } else if (exportType == 'monthly' &&
+          visibleColumns != null &&
+          columnDataKeys != null) {
+        rows = [
+          visibleColumns,
+          ...employees.map((employee) {
+            return visibleColumns.map((columnTitle) {
+              final dataKey = columnDataKeys[columnTitle]!;
+              final value = employee[dataKey];
+
+              final numericKeys = [
+                'basic_salary',
+                'house_allowance',
+                'transport_allowance',
+                'leave_pay',
+                'overtime_allowance',
+                'directors_fee',
+                'lumpsum_payment',
+                'any_other_allowance',
+                'total_cash_pay',
+                'value_of_car_benefit',
+                'other_non_cash_benefits',
+                'total_non_cash_benefits',
+                'value_of_meals',
+                'rent_of_house',
+                'computed_rent_of_house',
+                'rent_recovered_from_employee',
+                'net_value_of_the_house',
+                'total_gross_pay',
+                'shif',
+                'nssf',
+                'post_retirement_medication_fund',
+                'mortgage_interest',
+                'housing_levy',
+                'actual_benefits',
+                'taxable_pay',
+                'tax_payable_before_reliefs',
+                'monthly_personal_relief',
+                'insurance_relief',
+                'paye'
+              ];
+
+              if (numericKeys.contains(dataKey)) {
+                return numberFormat.format(
+                    double.tryParse(value?.toString() ?? '0.0') ?? 0.0);
+              } else {
+                return value?.toString() ?? 'N/A';
+              }
+            }).toList();
+          }),
+        ];
+        fileName = 'paye_export_${sanitizedCompanyName}_$monthYear.csv';
       } else {
         rows = [
           [
@@ -616,8 +662,18 @@ class PAYEExport {
       }
 
       final csv = const ListToCsvConverter().convert(rows);
-      final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/$fileName';
+      String filePath;
+      if (Platform.isWindows) {
+        const String directoryPath = r'C:\payroll exports';
+        final directory = Directory(directoryPath);
+        if (!await directory.exists()) {
+          await directory.create(recursive: true);
+        }
+        filePath = '$directoryPath\\$fileName';
+      } else {
+        final directory = await getTemporaryDirectory();
+        filePath = '${directory.path}/$fileName';
+      }
       final file = File(filePath);
 
       await file.writeAsString(csv);
@@ -657,8 +713,6 @@ class PAYEExport {
 
   // Calculate Tax Before Reliefs
   static String _calculateTaxBeforeReliefs(Map<String, dynamic> salary) {
-    final taxablePay =
-        double.tryParse(salary['taxable_income']?.toString() ?? '0.0') ?? 0.0;
     final paye =
         double.tryParse(salary['paye_deduction']?.toString() ?? '0.0') ?? 0.0;
     const relief = 2400.00; // Monthly personal relief (Kenya, as of 2023)
@@ -692,10 +746,15 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
   String searchKeyword = '';
   late int effectiveCompanyId;
   late String companyName;
+  // New state for column selection
+  late Map<String, bool> _columnVisibility;
+  late List<String> _allColumns;
+  late Map<String, String> _columnDataKeys;
 
   @override
   void initState() {
     super.initState();
+    _initializeColumns();
     // Validate company ID
     effectiveCompanyId = widget.companyId ??
         (widget.user['company_id'] != null
@@ -714,6 +773,86 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
     _fetchPAYEData();
   }
 
+  void _initializeColumns() {
+    _allColumns = [
+      'KRA PIN',
+      'Fullname',
+      'Resident Status',
+      'Type of employee',
+      'Basic salary',
+      'House Allowance',
+      'Transport Allowance',
+      'Leave Pay',
+      'Overtime Allowance',
+      'Directors fee',
+      'Lumpsum payment if any',
+      'Any other allowance',
+      'Total Cash pay',
+      'Value of car benefit',
+      'Other non-cash benefits',
+      'Total non-cash benefits',
+      'Value of meals',
+      'Type of housing',
+      'Rent of house',
+      'Computed rent of house',
+      'Rent recovered from employee',
+      'Net value of the house',
+      'Total gross pay',
+      'Shif',
+      'NSSF',
+      'Post Retirement medication fund',
+      'Mortgage Interest',
+      'Housing levy',
+      'Actual benefits',
+      'Taxable pay',
+      'Tax payable before reliefs',
+      'Monthly personal relief',
+      'Insurance relief',
+      'Leave blank',
+      'PAYE',
+      'Company Name'
+    ];
+    _columnDataKeys = {
+      'KRA PIN': 'kra_pin',
+      'Fullname': 'fullname',
+      'Resident Status': 'resident_status',
+      'Type of employee': 'type_of_employee',
+      'Basic salary': 'basic_salary',
+      'House Allowance': 'house_allowance',
+      'Transport Allowance': 'transport_allowance',
+      'Leave Pay': 'leave_pay',
+      'Overtime Allowance': 'overtime_allowance',
+      'Directors fee': 'directors_fee',
+      'Lumpsum payment if any': 'lumpsum_payment',
+      'Any other allowance': 'any_other_allowance',
+      'Total Cash pay': 'total_cash_pay',
+      'Value of car benefit': 'value_of_car_benefit',
+      'Other non-cash benefits': 'other_non_cash_benefits',
+      'Total non-cash benefits': 'total_non_cash_benefits',
+      'Value of meals': 'value_of_meals',
+      'Type of housing': 'type_of_housing',
+      'Rent of house': 'rent_of_house',
+      'Computed rent of house': 'computed_rent_of_house',
+      'Rent recovered from employee': 'rent_recovered_from_employee',
+      'Net value of the house': 'net_value_of_the_house',
+      'Total gross pay': 'total_gross_pay',
+      'Shif': 'shif',
+      'NSSF': 'nssf',
+      'Post Retirement medication fund': 'post_retirement_medication_fund',
+      'Mortgage Interest': 'mortgage_interest',
+      'Housing levy': 'housing_levy',
+      'Actual benefits': 'actual_benefits',
+      'Taxable pay': 'taxable_pay',
+      'Tax payable before reliefs': 'tax_payable_before_reliefs',
+      'Monthly personal relief': 'monthly_personal_relief',
+      'Insurance relief': 'insurance_relief',
+      'Leave blank': 'leave_blank',
+      'PAYE': 'paye',
+      'Company Name': 'company_name',
+    };
+    _columnVisibility = {for (var col in _allColumns) col: true};
+  }
+
   // Fetch PAYE Data: Retrieves and filters employee and salary data
   Future<void> _fetchPAYEData() async {
     setState(() {
@@ -724,18 +863,14 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
     try {
       final employees =
           await widget.apiService.getEmployeeList(effectiveCompanyId);
-      final salaries = await widget.apiService.getSalaries(effectiveCompanyId);
+      final salaries = await widget.apiService.getSalaries(effectiveCompanyId, month: selectedMonth, year: selectedYear);
 
       final filteredSalaries = salaries.where((salary) {
         final paymentDate = DateTime.tryParse(salary['payment_date'] ?? '');
         final matchesMonthYear = paymentDate != null &&
             paymentDate.month == selectedMonth &&
             paymentDate.year == selectedYear;
-        final hasPAYE =
-            (double.tryParse(salary['paye_deduction']?.toString() ?? '0.0') ??
-                    0.0) >
-                0;
-        return matchesMonthYear && hasPAYE;
+        return matchesMonthYear;
       }).toList();
 
       final payeEmployeeIds = filteredSalaries
@@ -839,28 +974,35 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
         month: selectedMonth,
         apiService: widget.apiService,
         companyId: effectiveCompanyId,
+        visibleColumns:
+            _allColumns.where((col) => _columnVisibility[col] == true).toList(),
+        columnDataKeys: _columnDataKeys,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Exported to $filePath'),
-          backgroundColor: Colors.teal[700],
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exported to $filePath'),
+            backgroundColor: Colors.teal[700],
+          ),
+        );
+      }
       return filePath;
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to export: $e'),
-          action: SnackBarAction(
-            label: 'Retry',
-            onPressed: () => _exportToCSV(exportType),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to export: $e'),
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () => _exportToCSV(exportType),
+            ),
           ),
-        ),
-      );
+        );
+      }
       return '';
     } finally {
-      setState(() => _isExporting = false);
+      if (mounted) setState(() => _isExporting = false);
     }
   }
 
@@ -906,6 +1048,54 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
         dropdownColor: Colors.white,
         icon: Icon(Icons.arrow_drop_down, color: Colors.teal[700]),
       ),
+    );
+  }
+
+  Future<void> _showColumnSelectionDialog() async {
+    final Map<String, bool> tempVisibility = Map.from(_columnVisibility);
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Select Columns to Display'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _allColumns.length,
+                  itemBuilder: (context, index) {
+                    final column = _allColumns[index];
+                    return CheckboxListTile(
+                      title: Text(column),
+                      value: tempVisibility[column],
+                      onChanged: (bool? value) {
+                        setDialogState(() {
+                          tempVisibility[column] = value!;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _columnVisibility = tempVisibility);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1074,6 +1264,19 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
                                     onChanged: _filterEmployees,
                                     style: TextStyle(color: Colors.grey[800]),
                                   ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: _showColumnSelectionDialog,
+                                    icon: const Icon(Icons.view_column),
+                                    label: const Text('Select Columns'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.teal[600],
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1110,426 +1313,87 @@ class _PAYEExportDetailsPageState extends State<_PAYEExportDetailsPage> {
                                         scrollDirection: Axis.vertical,
                                         child: DataTable(
                                           columnSpacing: 12,
-                                          dataRowHeight: 60,
+                                          dataRowMinHeight: 60,
+                                          dataRowMaxHeight: 60,
                                           headingRowColor:
-                                              MaterialStateProperty.all(
+                                              WidgetStateProperty.all(
                                                   Colors.teal[100]),
-                                          columns: const [
-                                            DataColumn(
-                                                label: Text('KRA PIN',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Fullname',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Resident Status',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Type of Employee',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Basic Salary',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('House Allowance',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Transport Allowance',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Leave Pay',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Overtime Allowance',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Directors Fee',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Lumpsum Payment',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Any Other Allowance',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Total Cash Pay',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Value of Car Benefit',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Other Non-Cash Benefits',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Total Non-Cash Benefits',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Value of Meals',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Type of Housing',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Rent of House',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Computed Rent of House',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Rent Recovered from Employee',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Net Value of the House',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Total Gross Pay',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('SHIF',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('NSSF',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Post Retirement Medication Fund',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Mortgage Interest',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Housing Levy',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Actual Benefits',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Taxable Pay',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Tax Payable Before Reliefs',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text(
-                                                    'Monthly Personal Relief',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Insurance Relief',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Leave Blank',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('PAYE',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                            DataColumn(
-                                                label: Text('Company Name',
-                                                    style: TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                        color: Colors.teal))),
-                                          ],
+                                          columns: _allColumns
+                                              .where((col) =>
+                                                  _columnVisibility[col] ==
+                                                  true)
+                                              .map((columnTitle) => DataColumn(
+                                                    label: Text(columnTitle,
+                                                        style: const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color:
+                                                                Colors.teal)),
+                                                  ))
+                                              .toList(),
                                           rows: _filteredEmployees
                                               .map((employee) {
                                             return DataRow(
-                                              cells: [
-                                                DataCell(Text(
-                                                    employee['kra_pin'],
+                                              cells: _allColumns
+                                                  .where((col) =>
+                                                      _columnVisibility[col] ==
+                                                      true)
+                                                  .map((columnTitle) {
+                                                final dataKey =
+                                                    _columnDataKeys[
+                                                        columnTitle]!;
+                                                final value =
+                                                    employee[dataKey];
+                                                String displayValue;
+
+                                                final numericKeys = [
+                                                  'basic_salary',
+                                                  'house_allowance',
+                                                  'transport_allowance',
+                                                  'leave_pay',
+                                                  'overtime_allowance',
+                                                  'directors_fee',
+                                                  'lumpsum_payment',
+                                                  'any_other_allowance',
+                                                  'total_cash_pay',
+                                                  'value_of_car_benefit',
+                                                  'other_non_cash_benefits',
+                                                  'total_non_cash_benefits',
+                                                  'value_of_meals',
+                                                  'rent_of_house',
+                                                  'computed_rent_of_house',
+                                                  'rent_recovered_from_employee',
+                                                  'net_value_of_the_house',
+                                                  'total_gross_pay',
+                                                  'shif',
+                                                  'nssf',
+                                                  'post_retirement_medication_fund',
+                                                  'mortgage_interest',
+                                                  'housing_levy',
+                                                  'actual_benefits',
+                                                  'taxable_pay',
+                                                  'tax_payable_before_reliefs',
+                                                  'monthly_personal_relief',
+                                                  'insurance_relief',
+                                                  'paye'
+                                                ];
+
+                                                if (numericKeys
+                                                    .contains(dataKey)) {
+                                                  displayValue =
+                                                      'KES ${numberFormat.format(double.tryParse(value?.toString() ?? '0.0') ?? 0.0)}';
+                                                } else {
+                                                  displayValue =
+                                                      value?.toString() ??
+                                                          'N/A';
+                                                }
+
+                                                return DataCell(Text(
+                                                    displayValue,
                                                     style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee['fullname'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee['resident_status'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee[
-                                                        'type_of_employee'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['basic_salary'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['house_allowance'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['transport_allowance'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['leave_pay'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['overtime_allowance'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['directors_fee'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['lumpsum_payment'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['any_other_allowance'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['total_cash_pay'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['value_of_car_benefit'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['other_non_cash_benefits'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['total_non_cash_benefits'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['value_of_meals'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee['type_of_housing'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['rent_of_house'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['computed_rent_of_house'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['rent_recovered_from_employee'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['net_value_of_the_house'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['total_gross_pay'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['shif'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['nssf'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['post_retirement_medication_fund'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['mortgage_interest'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['housing_levy'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['actual_benefits'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['taxable_pay'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['tax_payable_before_reliefs'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['monthly_personal_relief'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['insurance_relief'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee['leave_blank'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    'KES ${numberFormat.format(double.tryParse(employee['paye'] ?? '0.0') ?? 0.0)}',
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                                DataCell(Text(
-                                                    employee['company_name'],
-                                                    style: TextStyle(
-                                                        color:
-                                                            Colors.grey[800]))),
-                                              ],
+                                                        color: Colors
+                                                            .grey[800])));
+                                              }).toList(),
                                             );
                                           }).toList(),
                                         ),

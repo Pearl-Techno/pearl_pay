@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../services/services.dart';
@@ -17,10 +18,10 @@ class RepayLoanScreen extends StatefulWidget {
   });
 
   @override
-  _RepayLoanScreenState createState() => _RepayLoanScreenState();
+  RepayLoanScreenState createState() => RepayLoanScreenState();
 }
 
-class _RepayLoanScreenState extends State<RepayLoanScreen> {
+class RepayLoanScreenState extends State<RepayLoanScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   List<Map<String, dynamic>> loans = [];
   Map<String, dynamic>? selectedLoan;
@@ -37,6 +38,7 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
     super.initState();
     if (widget.user['role'] != 'admin') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content:
@@ -70,6 +72,7 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
           .fetchLoansForEmployee(widget.employeeId, widget.user['company_id']);
 
       if (fetchedLoans.isEmpty) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text('No active loans found for this employee')),
@@ -108,8 +111,10 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
       totalRepaid = repayAmount + interest;
     });
 
-    print(
-        'Calculated repayment: Interest = $interest, Total Repaid = $totalRepaid');
+    if (kDebugMode) {
+      print(
+          'Calculated repayment: Interest = $interest, Total Repaid = $totalRepaid');
+    }
   }
 
   Future<void> _processRepayment() async {
@@ -139,11 +144,14 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
         'repayment_date': DateFormat('yyyy-MM-dd').format(repayDate!),
       };
 
-      print(
-          'Processing loan repayment for loan ID: ${selectedLoan!['loan_id']}');
+      if (kDebugMode) {
+        print(
+            'Processing loan repayment for loan ID: ${selectedLoan!['loan_id']}');
+      }
       await widget.apiService
           .processLoanRepayment(repaymentData, widget.user['company_id']);
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Loan repayment processed successfully'),
@@ -151,9 +159,12 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
         ),
       );
 
+      if (!mounted) return;
       Navigator.pop(context);
     } catch (e) {
-      print('Error processing loan repayment: $e');
+      if (kDebugMode) {
+        print('Error processing loan repayment: $e');
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to process loan repayment: $e'),
@@ -190,8 +201,10 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
     if (pickedDate != null) {
       setState(() {
         repayDate = pickedDate;
-        print(
-            'Selected repayment date: ${DateFormat('yyyy-MM-dd').format(pickedDate)}');
+        if (kDebugMode) {
+          print(
+              'Selected repayment date: ${DateFormat('yyyy-MM-dd').format(pickedDate)}');
+        }
       });
     }
   }
@@ -250,7 +263,8 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
         filled: true,
         fillColor: Colors.white,
       ),
-      value: selectedLoan,
+      key: ValueKey(selectedLoan),
+      initialValue: selectedLoan,
       items: loans.map((loan) {
         return DropdownMenuItem<Map<String, dynamic>>(
           value: loan,
@@ -307,10 +321,14 @@ class _RepayLoanScreenState extends State<RepayLoanScreen> {
         title: 'Repay Loan',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
-          print('Profile tapped');
+          if (kDebugMode) {
+            print('Profile tapped');
+          }
         },
       ),
       body: Container(

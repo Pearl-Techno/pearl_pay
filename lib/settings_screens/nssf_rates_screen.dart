@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../screens/login_screen.dart';
@@ -11,13 +12,13 @@ class NSSFRatesScreen extends StatefulWidget {
   final ApiService apiService;
 
   const NSSFRatesScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _NSSFRatesScreenState createState() => _NSSFRatesScreenState();
+  State<NSSFRatesScreen> createState() => _NSSFRatesScreenState();
 }
 
 class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
@@ -82,11 +83,11 @@ class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
         throw Exception('User data is incomplete (missing company ID or user ID)');
       }
 
-      final data = {
-        'company_id': widget.user['company_id'].toString(),
-        'user_id': widget.user['id'].toString(),
-        'nssf_rate': double.parse(_nssfRateController.text),
-      };
+      // final data = {
+      //   'company_id': widget.user['company_id'].toString(),
+      //   'user_id': widget.user['id'].toString(),
+      //   'nssf_rate': double.parse(_nssfRateController.text),
+      // };
 
      // await widget.apiService.updateNSSFRate(data);
 
@@ -114,7 +115,7 @@ class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -135,6 +136,7 @@ class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -149,7 +151,9 @@ class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
         title: 'NSSF Rates',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -169,7 +173,7 @@ class _NSSFRatesScreenState extends State<NSSFRatesScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],

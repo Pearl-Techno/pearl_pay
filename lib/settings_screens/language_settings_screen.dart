@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,13 +12,13 @@ class LanguageSettingsScreen extends StatefulWidget {
   final ApiService apiService;
 
   const LanguageSettingsScreen({
-    Key? key,
+    super.key,
     required this.user,
     required this.apiService,
-  }) : super(key: key);
+  });
 
   @override
-  _LanguageSettingsScreenState createState() => _LanguageSettingsScreenState();
+  State<LanguageSettingsScreen> createState() => _LanguageSettingsScreenState();
 }
 
 class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
@@ -65,17 +66,19 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
       setState(() {
         _selectedLanguage = 'English'; // Fallback
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error loading language settings: $e'),
-          backgroundColor: Colors.red[700],
-          action: SnackBarAction(
-            label: 'Retry',
-            textColor: Colors.white,
-            onPressed: _loadPreferences,
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading language settings: $e'),
+            backgroundColor: Colors.red[700],
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _loadPreferences,
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -100,10 +103,10 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
         throw Exception('User data is incomplete (missing ID or role)');
       }
 
-      final preferences = {
-        'user_id': widget.user['id'].toString(),
-        'language': _selectedLanguage,
-      };
+      // final preferences = {
+      //   'user_id': widget.user['id'].toString(),
+      //   'language': _selectedLanguage,
+      // };
 
      //await widget.apiService.updateLanguagePreference(preferences);
 
@@ -134,7 +137,7 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
   }
 
   // Logout function
-  Future<void> _logout(BuildContext context) async {
+  Future<void> _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -155,6 +158,7 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
     if (confirm == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const LoginScreen()),
@@ -169,7 +173,9 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
         title: 'Language Settings',
         backgroundColor: Colors.teal[800],
         onNotificationTap: () {
-          print('Notifications tapped');
+          if (kDebugMode) {
+            print('Notifications tapped');
+          }
         },
         onProfileTap: () {
           showModalBottomSheet(
@@ -189,7 +195,7 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
                     title: const Text('Logout'),
                     onTap: () {
                       Navigator.pop(context);
-                      _logout(context);
+                      _logout();
                     },
                   ),
                 ],
@@ -269,7 +275,7 @@ class _LanguageSettingsScreenState extends State<LanguageSettingsScreen> {
                                   prefixIcon:
                                       Icon(Icons.language, color: Colors.teal[700]),
                                 ),
-                                value: _selectedLanguage,
+                                initialValue: _selectedLanguage,
                                 hint: const Text('Choose a language'),
                                 items: _languages
                                     .map((lang) => DropdownMenuItem(
